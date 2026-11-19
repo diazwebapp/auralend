@@ -1,310 +1,507 @@
 ---
 import LayoutAdmin from '../../layouts/LayoutAdmin.astro';
-
-const hoy = new Date().toISOString().split('T')[0];
 ---
 
-<LayoutAdmin title="Nuevo Crédito - Sistema de Préstamos">
-  <div class="form-wrapper">
-    
-    <div class="form-header">
-      <a href="/" class="back-link">&larr; Volver</a>
-      <h1>Otorgar Nuevo Crédito</h1>
+<LayoutAdmin title="Nuevo Crédito">
+  <section id="nuevo-prestamo-app" class="card-container">
+    <div class="header-row">
+      <div>
+        <h1>Registrar Nuevo Crédito</h1>
+        <p class="subtitle">
+          El crédito quedará en estado <strong>pendiente</strong> mientras el cliente revisa y firma el contrato.
+        </p>
+      </div>
     </div>
 
-    <div id="error-box" class="alert-error" style="display: none;"></div>
-
-    <form id="form-credito" class="card form-container">
-      
-      <!-- Sección 1: Cliente -->
-      <fieldset class="form-section">
-        <legend>1. Datos del Cliente</legend>
-        
+    <form id="form-nuevo-prestamo" class="loan-form" novalidate>
+      <div class="grid-2">
         <div class="form-group">
-          <label>Nombre *</label>
-          <input type="text" id="nombre" required placeholder="Ej. Carlos" />
+          <label for="nombre">Nombre *</label>
+          <input
+            type="text"
+            id="nombre"
+            name="nombre"
+            required
+            placeholder="Ej. Carlos"
+          />
         </div>
 
         <div class="form-group">
-          <label>Apellido *</label>
-          <input type="text" id="apellido" required placeholder="Ej. Pérez" />
+          <label for="apellido">Apellido *</label>
+          <input
+            type="text"
+            id="apellido"
+            name="apellido"
+            required
+            placeholder="Ej. Pérez"
+          />
+        </div>
+      </div>
+
+      <div class="grid-3">
+        <div class="form-group">
+          <label for="cedula">Cédula (Numérica) *</label>
+          <input
+            type="text"
+            id="cedula"
+            name="cedula"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            required
+            placeholder="Ej. 27157488"
+          />
         </div>
 
         <div class="form-group">
-          <label>WhatsApp (con código país) *</label>
-          <input type="tel" id="whatsapp" required placeholder="+584121234567" />
+          <label for="whatsapp">WhatsApp *</label>
+          <input
+            type="text"
+            id="whatsapp"
+            name="whatsapp"
+            required
+            placeholder="Ej. +584121234567"
+          />
         </div>
 
         <div class="form-group">
-          <label>Correo electrónico (opcional)</label>
-          <input type="email" id="correo" placeholder="cliente@correo.com" />
+          <label for="correo">Correo (Opcional)</label>
+          <input
+            type="email"
+            id="correo"
+            name="correo"
+            placeholder="cliente@correo.com"
+          />
+        </div>
+      </div>
+
+      <div class="grid-3">
+        <div class="form-group">
+          <label for="monto">Monto a Acreditar *</label>
+          <input
+            type="number"
+            id="monto"
+            name="monto"
+            step="0.01"
+            min="0.01"
+            required
+            placeholder="100.00"
+          />
         </div>
 
         <div class="form-group">
-          <label>Notas / Garantía</label>
-          <textarea id="notas" rows="2" placeholder="Detalles de garantía o referencias..."></textarea>
-        </div>
-      </fieldset>
-
-      <!-- Sección 2: Préstamo -->
-      <fieldset class="form-section">
-        <legend>2. Condiciones del Préstamo (7 días)</legend>
-
-        <div class="form-group">
-          <label>Monto a prestar (USDT) *</label>
-          <input type="number" id="input-monto" step="0.01" min="1" required placeholder="100.00" />
+          <label for="tasa">Tasa de Interés (%)</label>
+          <input
+            type="number"
+            id="tasa"
+            name="tasa"
+            step="0.01"
+            value="20"
+          />
         </div>
 
         <div class="form-group">
-          <label>Interés Semanal (%)</label>
-          <input type="number" id="input-tasa" step="0.01" value="20" required />
+          <label for="fecha_entrega">Fecha de Entrega</label>
+          <input
+            type="date"
+            id="fecha_entrega"
+            name="fecha_entrega"
+          />
         </div>
+      </div>
 
+      <div class="grid-2">
         <div class="form-group">
-          <label>Fecha de Entrega</label>
-          <input type="date" id="input-fecha" value={hoy} required />
-        </div>
-
-        <div class="form-group">
-          <label>Método de Desembolso</label>
-          <select id="metodo_pago">
+          <label for="metodo_pago">Método de Entrega / Pago</label>
+          <select id="metodo_pago" name="metodo_pago">
             <option value="USDT - Binance Pay">USDT - Binance Pay</option>
-            <option value="USDT - Red TRC20 / BEP20">USDT - Red TRC20 / BEP20</option>
-            <option value="Efectivo USD">Efectivo USD</option>
-            <option value="Zinli / Wally">Zinli / Wally</option>
             <option value="Pago Móvil / Bolívares">Pago Móvil / Bolívares</option>
+            <option value="Zinli / Wally">Zinli / Wally</option>
+            <option value="Efectivo">Efectivo</option>
           </select>
         </div>
 
-        <!-- Resumen en vivo -->
-        <div class="calc-preview">
-          <div>
-            <span class="calc-label">Interés 1ra semana:</span>
-            <span id="preview-interes" class="calc-value-yellow">$0.00</span>
-          </div>
-          <div>
-            <span class="calc-label">Total en 7 días:</span>
-            <span id="preview-total" class="calc-value-green">$0.00</span>
-          </div>
-          <div>
-            <span class="calc-label">Fecha de corte:</span>
-            <span id="preview-fecha" class="calc-value-white">--/--/----</span>
-          </div>
+        <div class="form-group">
+          <label for="notas">Garantía / Observaciones</label>
+          <input
+            type="text"
+            id="notas"
+            name="notas"
+            placeholder="Notas o acuerdo adicional"
+          />
         </div>
-      </fieldset>
-
-      <div class="form-actions">
-        <a href="/" class="btn-secondary" style="text-align: center; text-decoration: none;">Cancelar</a>
-        <button type="submit" id="btn-submit" class="btn-primary">Registrar y Desembolsar</button>
       </div>
 
+      <div id="form-error" class="alert-error" style="display: none;"></div>
+      <div id="form-info" class="alert-info" style="display: none;"></div>
+
+      <div class="acciones-formulario">
+        <button type="button" id="btn-leer-contrato" class="btn-secondary">
+          Leer contrato
+        </button>
+
+        <button type="submit" id="btn-crear" class="btn-primary">
+          Crear Crédito en Estado Pendiente
+        </button>
+      </div>
     </form>
-  </div>
 
-  <script>
-    import { supabase } from '../../lib/supabase';
+    <!-- Panel de lectura e impresión del contrato -->
+    <div id="contrato-panel" class="contrato-panel" style="display: none;">
+      <div class="contrato-actions">
+        <button type="button" id="btn-imprimir-contrato" class="btn-secondary">
+          Imprimir / Guardar PDF
+        </button>
+        <button type="button" id="btn-cerrar-contrato" class="btn-secondary">
+          Volver al formulario
+        </button>
+        <button type="button" id="btn-ir-detalle" class="btn-primary" style="display: none;">
+          Ir al Detalle del Préstamo →
+        </button>
+      </div>
 
-    const inputMonto = document.getElementById('input-monto') as HTMLInputElement;
-    const inputTasa = document.getElementById('input-tasa') as HTMLInputElement;
-    const inputFecha = document.getElementById('input-fecha') as HTMLInputElement;
+      <div id="contrato-preview" class="contrato-preview"></div>
+    </div>
+  </section>
+</LayoutAdmin>
 
-    const previewInteres = document.getElementById('preview-interes');
-    const previewTotal = document.getElementById('preview-total');
-    const previewFecha = document.getElementById('preview-fecha');
+<script>
+  import { supabase } from '../../lib/supabase';
+  import { renderizarContratoHtml } from '../../lib/plantillaContrato';
 
-    function actualizarResumen() {
-      const monto = parseFloat(inputMonto.value) || 0;
-      const tasa = parseFloat(inputTasa.value) || 0;
-      const interes = monto * (tasa / 100);
-      const total = monto + interes;
+  const fechaInput = document.getElementById('fecha_entrega');
+  if (fechaInput && 'value' in fechaInput && !fechaInput.value) {
+    fechaInput.value = new Date().toISOString().split('T')[0];
+  }
 
-      if (previewInteres) previewInteres.textContent = `$${interes.toFixed(2)}`;
-      if (previewTotal) previewTotal.textContent = `$${total.toFixed(2)}`;
+  const cedulaInput = document.getElementById('cedula');
+  cedulaInput?.addEventListener('input', () => {
+    if ('value' in cedulaInput) {
+      cedulaInput.value = String(cedulaInput.value).replace(/\D/g, '');
+    }
+  });
 
-      if (inputFecha.value && previewFecha) {
-        const fecha = new Date(inputFecha.value + 'T00:00:00');
-        fecha.setDate(fecha.getDate() + 7);
-        previewFecha.textContent = fecha.toLocaleDateString('es-ES');
-      }
+  const form = document.getElementById('form-nuevo-prestamo');
+  const errorBox = document.getElementById('form-error');
+  const infoBox = document.getElementById('form-info');
+  const btnCrear = document.getElementById('btn-crear');
+  const btnLeerContrato = document.getElementById('btn-leer-contrato');
+  const btnCerrarContrato = document.getElementById('btn-cerrar-contrato');
+  const btnImprimir = document.getElementById('btn-imprimir-contrato');
+  const btnIrDetalle = document.getElementById('btn-ir-detalle');
+  const contratoPanel = document.getElementById('contrato-panel');
+  const contratoPreview = document.getElementById('contrato-preview');
+
+  let prestamoCreadoId: string | null = null;
+  let ultimoContratoHtml: string | null = null;
+
+  function mostrarError(msg: string) {
+    if (infoBox) infoBox.style.display = 'none';
+    if (errorBox) {
+      errorBox.textContent = msg;
+      errorBox.style.display = 'block';
+    }
+  }
+
+  function mostrarInfo(msg: string) {
+    if (errorBox) errorBox.style.display = 'none';
+    if (infoBox) {
+      infoBox.textContent = msg;
+      infoBox.style.display = 'block';
+    }
+  }
+
+  function obtenerDatosFormulario() {
+    const getVal = (id: string) => {
+      const el = document.getElementById(id);
+      return el && 'value' in el ? String(el.value).trim() : '';
+    };
+
+    const nombre = getVal('nombre');
+    const apellido = getVal('apellido');
+    const cedula = getVal('cedula').replace(/\D/g, '');
+    const whatsapp = getVal('whatsapp');
+    const correo = getVal('correo');
+    const monto = Number(getVal('monto') || 0);
+    const tasa = Number(getVal('tasa') || 20);
+    const fechaEntrega = getVal('fecha_entrega') || new Date().toISOString().split('T')[0];
+    const metodoPago = getVal('metodo_pago') || 'USDT';
+    const notas = getVal('notas');
+    const interesEstimado = Number(((monto * tasa) / 100).toFixed(2));
+
+    return {
+      nombre,
+      apellido,
+      cedula,
+      whatsapp,
+      correo,
+      monto,
+      tasa,
+      interesEstimado,
+      fechaEntrega,
+      metodoPago,
+      notas,
+    };
+  }
+
+  function generarYMostrarContrato(prestamoId = 'BORRADOR') {
+    const d = obtenerDatosFormulario();
+
+    const html = renderizarContratoHtml({
+      prestamoId,
+      adminNombre: 'Administración',
+      clienteNombre: `${d.nombre} ${d.apellido}`.trim() || 'Cliente por definir',
+      clienteCedula: d.cedula || 'No registrada',
+      clienteWhatsapp: d.whatsapp || 'No registrado',
+      clienteCorreo: d.correo || 'No registrado',
+      garantiaNotas: d.notas || 'Sin garantía adicional registrada',
+      montoAcreditado: `$${d.monto.toFixed(2)}`,
+      capitalRestante: `$${d.monto.toFixed(2)}`,
+      interesCiclo: `$${d.interesEstimado.toFixed(2)} (${d.tasa}%)`,
+      modalidadPago: d.metodoPago,
+      fechaEmision: d.fechaEntrega,
+      fechaProximoPago: '7 días tras activación/entrega',
+    });
+
+    ultimoContratoHtml = html;
+
+    if (contratoPreview && contratoPanel) {
+      contratoPreview.innerHTML = html;
+      contratoPanel.style.display = 'block';
+      contratoPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  function irAlDetalle() {
+    if (!prestamoCreadoId) return;
+    window.location.href = `/prestamos/${prestamoCreadoId}`;
+  }
+
+  btnLeerContrato?.addEventListener('click', () => {
+    if (errorBox) errorBox.style.display = 'none';
+    generarYMostrarContrato(prestamoCreadoId || 'BORRADOR');
+  });
+
+  btnCerrarContrato?.addEventListener('click', () => {
+    if (contratoPanel) contratoPanel.style.display = 'none';
+  });
+
+  btnIrDetalle?.addEventListener('click', () => {
+    irAlDetalle();
+  });
+
+  btnImprimir?.addEventListener('click', () => {
+    const htmlContenido = ultimoContratoHtml || contratoPreview?.innerHTML || '';
+    const ventanaImpresion = window.open('', '_blank', 'width=860,height=720');
+
+    if (!ventanaImpresion) {
+      window.print();
+      return;
     }
 
-    inputMonto?.addEventListener('input', actualizarResumen);
-    inputTasa?.addEventListener('input', actualizarResumen);
-    inputFecha?.addEventListener('change', actualizarResumen);
-    actualizarResumen();
+    ventanaImpresion.document.open();
+    ventanaImpresion.document.write(htmlContenido);
+    ventanaImpresion.document.close();
+    ventanaImpresion.focus();
 
-    const form = document.getElementById('form-credito') as HTMLFormElement;
-    const errorBox = document.getElementById('error-box');
-    const btnSubmit = document.getElementById('btn-submit') as HTMLButtonElement;
-
-    form?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      if (errorBox) errorBox.style.display = 'none';
-      btnSubmit.textContent = 'Procesando...';
-      btnSubmit.setAttribute('disabled', 'true');
-
-      const nombre = (document.getElementById('nombre') as HTMLInputElement).value;
-      const apellido = (document.getElementById('apellido') as HTMLInputElement).value;
-      const whatsapp = (document.getElementById('whatsapp') as HTMLInputElement).value;
-      const correo = (document.getElementById('correo') as HTMLInputElement).value;
-      const notas = (document.getElementById('notas') as HTMLTextAreaElement).value;
-      const monto = parseFloat(inputMonto.value);
-      const tasa = parseFloat(inputTasa.value);
-      const fecha_entrega = inputFecha.value;
-      const metodo_pago = (document.getElementById('metodo_pago') as HTMLSelectElement).value;
-
-      try {
-        // Llamada directa y atómica a la función RPC respetando el RLS del usuario autenticado
-        const { error } = await supabase.rpc('crear_cliente_y_prestamo', {
-          p_nombre: nombre.trim(),
-          p_apellido: apellido.trim(),
-          p_whatsapp: whatsapp.trim(),
-          p_correo: correo ? correo.trim() : null,
-          p_notas: notas ? notas.trim() : null,
-          p_monto: monto,
-          p_tasa: tasa,
-          p_fecha_entrega: fecha_entrega,
-          p_metodo_pago: metodo_pago
-        });
-
-        if (error) throw error;
-
-        // Éxito: Redirigir al dashboard
-        window.location.href = '/';
-
-      } catch (err: any) {
-        if (errorBox) {
-          errorBox.textContent = err.message || 'Error al procesar el registro.';
-          errorBox.style.display = 'block';
-        }
-        btnSubmit.textContent = 'Registrar y Desembolsar';
-        btnSubmit.removeAttribute('disabled');
+    ventanaImpresion.addEventListener('afterprint', () => {
+      ventanaImpresion.close();
+      if (prestamoCreadoId) {
+        irAlDetalle();
       }
     });
-  </script>
-  
 
-  <style>
-    .form-wrapper {
-      max-width: 600px;
-      margin: 0 auto;
+    setTimeout(() => {
+      ventanaImpresion.print();
+    }, 250);
+  });
+
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (errorBox) errorBox.style.display = 'none';
+    if (infoBox) infoBox.style.display = 'none';
+
+    const d = obtenerDatosFormulario();
+
+    if (!d.nombre || !d.apellido || !d.cedula || !d.whatsapp || !d.monto || d.monto <= 0) {
+      mostrarError('Completa nombre, apellido, cédula numérica, WhatsApp y un monto mayor a 0.');
+      return;
     }
 
-    .form-header {
-      margin-bottom: 1.25rem;
+    if (btnCrear) {
+      btnCrear.textContent = 'Registrando crédito...';
+      btnCrear.setAttribute('disabled', 'true');
     }
 
-    .back-link {
-      font-size: 0.813rem;
-      color: var(--accent);
-      text-decoration: none;
-    }
-
-    .form-header h1 {
-      font-size: 1.25rem;
-      font-weight: 700;
-      color: #fff;
-      margin-top: 0.25rem;
-    }
-
-    .alert-error {
-      background-color: rgba(239, 68, 68, 0.1);
-      border: 1px solid rgba(239, 68, 68, 0.4);
-      color: #fca5a5;
-      padding: 0.75rem;
-      border-radius: 0.5rem;
-      font-size: 0.813rem;
-      margin-bottom: 1rem;
-    }
-
-    .form-container {
-      display: flex;
-      flex-direction: column;
-      gap: 1.5rem;
-    }
-
-    .form-section {
-      border: none;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-    }
-
-    .form-section legend {
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-muted);
-      border-bottom: 1px solid var(--border-color);
-      width: 100%;
-      padding-bottom: 0.5rem;
-      margin-bottom: 0.5rem;
-    }
-
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 0.35rem;
-    }
-
-    .calc-preview {
-      background-color: var(--bg-main);
-      border: 1px solid var(--border-color);
-      border-radius: 0.5rem;
-      padding: 1rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-    }
-
-    .calc-label {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
-
-    .calc-value-yellow {
-      font-size: 1rem;
-      font-weight: 600;
-      color: #fbbf24;
-      display: block;
-    }
-
-    .calc-value-green {
-      font-size: 1rem;
-      font-weight: 600;
-      color: var(--accent);
-      display: block;
-    }
-
-    .calc-value-white {
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: #fff;
-      display: block;
-    }
-
-    .form-actions {
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-      padding-top: 0.5rem;
-      border-top: 1px solid var(--border-color);
-    }
-
-    @media (min-width: 640px) {
-      .form-header h1 {
-        font-size: 1.5rem;
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) {
+        throw new Error('No hay sesión activa. Inicia sesión nuevamente.');
       }
-      .calc-preview {
-        flex-direction: row;
-        justify-content: space-between;
-        align-items: center;
+
+      const res = await fetch('/api/prestamos/crear', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          nombre: d.nombre,
+          apellido: d.apellido,
+          cedula: Number(d.cedula),
+          whatsapp: d.whatsapp,
+          correo: d.correo || null,
+          monto: d.monto,
+          tasa: d.tasa,
+          fecha_entrega: d.fechaEntrega,
+          metodo_pago: d.metodoPago,
+          notas: d.notas || null,
+          estado: 'pendiente',
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json?.success || !json?.data?.prestamo_id) {
+        throw new Error(json?.error || `Error HTTP ${res.status}`);
       }
-      .form-actions {
-        flex-direction: row;
-        justify-content: flex-end;
+
+     prestamoCreadoId = String(json.data.prestamo_id);
+
+if (json.data.contrato_html) {
+  try {
+    sessionStorage.setItem(
+      `contrato_html_${prestamoCreadoId}`,
+      String(json.data.contrato_html)
+    );
+  } catch {
+    // Ignorar si sessionStorage no está disponible
+  }
+}
+
+window.location.href = `/prestamos/${prestamoCreadoId}`;
+
+      if (btnIrDetalle) {
+        btnIrDetalle.style.display = 'inline-block';
+      }
+
+      mostrarInfo(
+        `Crédito registrado en estado PENDIENTE (ID: ${prestamoCreadoId}). Revisa o imprime el contrato y luego ve al detalle del préstamo.`
+      );
+    } catch (err) {
+      mostrarError(err instanceof Error ? err.message : 'Error al registrar el crédito.');
+    } finally {
+      if (btnCrear) {
+        btnCrear.textContent = 'Crear Crédito en Estado Pendiente';
+        btnCrear.removeAttribute('disabled');
       }
     }
-  </style>
-</LayoutAdmin>
+  });
+</script>
+
+<style>
+  .card-container {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 1.5rem;
+  }
+  .header-row {
+    margin-bottom: 1.25rem;
+  }
+  .header-row h1 {
+    margin: 0 0 0.25rem 0;
+  }
+  .subtitle {
+    margin: 0;
+    color: #9ca3af;
+    font-size: 0.92rem;
+  }
+  .loan-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+  }
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+  }
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .form-group label {
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+  .form-group input,
+  .form-group select {
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.375rem;
+    border: 1px solid #374151;
+    background: #111827;
+    color: #f9fafb;
+  }
+  .acciones-formulario {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 0.5rem;
+  }
+  .contrato-panel {
+    margin-top: 1.75rem;
+    border: 1px solid #374151;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    background: #ffffff;
+    color: #111827;
+  }
+  .contrato-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+  .contrato-preview {
+    border: 1px solid #e5e7eb;
+    border-radius: 0.375rem;
+    padding: 0.5rem;
+    overflow-x: auto;
+  }
+  .btn-primary,
+  .btn-secondary {
+    padding: 0.65rem 1.05rem;
+    border-radius: 0.375rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+  }
+  .btn-primary {
+    background: #10b981;
+    color: #06281e;
+  }
+  .btn-secondary {
+    background: #1f2937;
+    color: #f9fafb;
+  }
+  .alert-error {
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid #ef4444;
+    color: #fca5a5;
+  }
+  .alert-info {
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid #10b981;
+    color: #6ee7b7;
+  }
+</style>

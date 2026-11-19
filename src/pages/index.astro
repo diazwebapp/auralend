@@ -1,153 +1,208 @@
 ---
 import LayoutAdmin from '../layouts/LayoutAdmin.astro';
-import { supabase } from '../lib/supabase';
-
-// Consultar la vista de dashboard
-const { data: prestamos, error } = await supabase
-  .from('vista_dashboard_prestamos')
-  .select('*')
-  .order('fecha_entrega', { ascending: false });
 ---
 
-<LayoutAdmin title="Panel de Control - Gestión de Préstamos">
-  <div class="dashboard-header">
-    <div>
-      <h1 class="page-title">Cartera de Créditos</h1>
-      <p class="page-subtitle">Monitoreo de capitales, intereses y fechas de corte</p>
+<LayoutAdmin title="Cartera de Créditos - Auralend">
+  <div id="home-app" class="home-wrapper" style="display: none;">
+    <div class="home-header">
+      <div>
+        <h1>Cartera de Créditos</h1>
+        <p class="text-muted">Monitoreo de capitales, intereses y fechas de corte</p>
+      </div>
+      <div class="home-actions">
+        <a href="/prestamos/nuevo" class="btn-primary">+ Crédito</a>
+      </div>
+    </div>
+
+    <div id="home-error" class="alert-error" style="display: none;"></div>
+
+    <div id="resumen-grid" class="summary-grid" style="display: none;">
+      <div class="card summary-box">
+        <span class="label">Capital por Cobrar</span>
+        <strong id="sum-capital" class="stat-green">$0.00</strong>
+      </div>
+      <div class="card summary-box">
+        <span class="label">Interés del Ciclo</span>
+        <strong id="sum-interes" class="stat-yellow">$0.00</strong>
+      </div>
+      <div class="card summary-box">
+        <span class="label">Créditos Activos</span>
+        <strong id="sum-count" class="text-white">0</strong>
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="home-loading" class="text-center text-muted" style="padding: 2rem;">
+        Verificando sesión y cargando cartera...
+      </div>
+
+      <div id="home-table-wrap" class="table-responsive" style="display: none;">
+        <table>
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th>Acreditado</th>
+              <th>Capital Restante</th>
+              <th>Interés Semana</th>
+              <th>Próximo Pago</th>
+              <th>Estado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-prestamos"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
-  <div class="table-container card">
-    <div class="table-responsive">
-      <table>
-        <thead>
-          <tr>
-            <th>Cliente</th>
-            <th>Acreditado</th>
-            <th>Capital Restante</th>
-            <th>Interés Semana</th>
-            <th>Total Pagado</th>
-            <th>Próximo Pago</th>
-            <th style="text-align: right;">Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          {prestamos && prestamos.length > 0 ? (
-            prestamos.map((p) => (
+  <script>
+    import { supabase } from '../lib/supabase';
+
+    const homeApp = document.getElementById('home-app');
+    const errorBox = document.getElementById('home-error');
+    const loadingBox = document.getElementById('home-loading');
+    const tableWrap = document.getElementById('home-table-wrap');
+    const resumenGrid = document.getElementById('resumen-grid');
+    const tbody = document.getElementById('tbody-prestamos');
+
+    function formatMoney(val:number) {
+      return `$${Number(val || 0).toFixed(2)}`;
+    }
+
+    function formatDate(iso:any) {
+      if (!iso) return '--';
+      const d = new Date(String(iso));
+      return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleDateString('es-ES');
+    }
+
+    async function iniciarHome() {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+
+      if (!token) {
+        window.location.replace('/login');
+        return;
+      }
+
+      if (homeApp) homeApp.style.display = 'block';
+
+      try {
+        const res = await fetch('/api/prestamos', {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (res.status === 401) {
+          window.location.replace('/login');
+          return;
+        }
+
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+          throw new Error(json.error || `Error HTTP ${res.status}`);
+        }
+
+        const { prestamos, resumen } = json.data;
+
+        const sumCap = document.getElementById('sum-capital');
+        const sumInt = document.getElementById('sum-interes');
+        const sumCnt = document.getElementById('sum-count');
+
+        if (sumCap) sumCap.textContent = formatMoney(resumen?.capitalPendiente);
+        if (sumInt) sumInt.textContent = formatMoney(resumen?.interesPendiente);
+        if (sumCnt) sumCnt.textContent = String(Array.isArray(prestamos) ? prestamos.length : 0);
+
+        if (resumenGrid) resumenGrid.style.display = 'grid';
+
+        if (tbody) {
+          if (!Array.isArray(prestamos) || prestamos.length === 0) {
+            tbody.innerHTML = `
               <tr>
-                <td>
-                  <span class="client-name">{p.nombre} {p.apellido}</span>
-                  <span class="client-phone">📱 {p.whatsapp}</span>
-                </td>
-                <td>${p.monto_acreditado}</td>
-                <td><strong style="color: #fff;">${p.capital_restante}</strong></td>
-                <td><span class="badge-interest">${p.interes_pendiente_ciclo}</span></td>
-                <td><span class="badge-paid">${p.total_pagado_historico}</span></td>
-                <td>{p.fecha_proximo_pago}</td>
-                <td style="text-align: right;">
-                  <a href={`/prestamos/${p.prestamo_id}`} class="btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.75rem;">
-                    Historial
-                  </a>
+                <td colspan="7" class="text-center text-muted">
+                  Aún no tienes créditos registrados. Haz clic en <strong>+ Crédito</strong> para crear el primero.
                 </td>
               </tr>
-            ))
-          ) : (
-            <tr>
-              <td colspan="7" class="empty-state">
-                No hay créditos registrados todavía.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-  </div>
+            `;
+          } else {
+            tbody.innerHTML = prestamos
+              .map((p) => {
+                const cliente = p.clientes || {};
+                const nombreCompleto = `${cliente.nombre || ''} ${cliente.apellido || ''}`.trim() || 'Cliente';
+                const whatsapp = cliente.whatsapp || '';
+                const waDigits = String(whatsapp).replace(/[^0-9]/g, '');
+
+                return `
+                  <tr>
+                    <td>
+                      <div class="client-cell">
+                        <strong class="text-white">${nombreCompleto}</strong>
+                        ${
+                          whatsapp
+                            ? `<a href="https://wa.me/${waDigits}" target="_blank" rel="noopener noreferrer" class="wa-sub">📱 ${whatsapp}</a>`
+                            : ''
+                        }
+                      </div>
+                    </td>
+                    <td>${formatMoney(p.monto_acreditado)}</td>
+                    <td class="stat-green">${formatMoney(p.capital_restante)}</td>
+                    <td class="stat-yellow">${formatMoney(p.interes_pendiente_ciclo)}</td>
+                    <td>${formatDate(p.fecha_proximo_pago)}</td>
+                    <td><span class="badge-estado">${p.estado || 'activo'}</span></td>
+                    <td>
+                      <a href="/prestamos/${p.id}" class="action-link">Historial</a>
+                    </td>
+                  </tr>
+                `;
+              })
+              .join('');
+          }
+        }
+
+        if (loadingBox) loadingBox.style.display = 'none';
+        if (tableWrap) tableWrap.style.display = 'block';
+      } catch (err) {
+        if (loadingBox) loadingBox.style.display = 'none';
+        if (errorBox) {
+          errorBox.textContent = err instanceof Error ? err.message : 'Error al cargar la cartera.';
+          errorBox.style.display = 'block';
+        }
+      }
+    }
+
+    iniciarHome();
+  </script>
+
+  <style>
+    .home-wrapper { max-width: 1100px; margin: 0 auto; }
+    .home-header { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem; }
+    @media (min-width: 640px) {
+      .home-header { flex-direction: row; align-items: center; justify-content: space-between; }
+    }
+    .home-header h1 { font-size: 1.35rem; font-weight: 700; color: #fff; }
+    .summary-grid { display: grid; grid-template-columns: 1fr; gap: 0.85rem; margin-bottom: 1.25rem; }
+    @media (min-width: 640px) { .summary-grid { grid-template-columns: repeat(3, 1fr); } }
+    .summary-box { display: flex; flex-direction: column; gap: 0.25rem; }
+    .label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .stat-green { color: var(--accent); font-weight: 700; }
+    .stat-yellow { color: #fbbf24; font-weight: 700; }
+    .client-cell { display: flex; flex-direction: column; gap: 0.15rem; }
+    .wa-sub { font-size: 0.75rem; color: var(--accent); text-decoration: none; }
+    .badge-estado {
+      display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px;
+      font-size: 0.72rem; background-color: rgba(16, 185, 129, 0.12);
+      color: var(--accent); text-transform: capitalize;
+    }
+    .action-link { color: var(--accent); font-weight: 600; text-decoration: none; }
+    .action-link:hover { text-decoration: underline; }
+    .table-responsive { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85rem; }
+    th, td { padding: 0.75rem; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
+    th { color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 0.7rem; }
+    .alert-error {
+      background-color: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #fca5a5; padding: 0.75rem; border-radius: 0.5rem; margin-bottom: 1rem; font-size: 0.85rem;
+    }
+  </style>
 </LayoutAdmin>
-
-<style>
-  .dashboard-header {
-    margin-bottom: 1.5rem;
-  }
-
-  .page-title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: #fff;
-  }
-
-  .page-subtitle {
-    font-size: 0.875rem;
-    color: var(--text-muted);
-  }
-
-  /* Estilos de la Tabla */
-  .table-container {
-    padding: 0;
-    overflow: hidden;
-  }
-
-  .table-responsive {
-    overflow-x: auto;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    text-align: left;
-    font-size: 0.875rem;
-  }
-
-  th {
-    background-color: rgba(0, 0, 0, 0.2);
-    color: var(--text-muted);
-    font-weight: 600;
-    text-transform: uppercase;
-    font-size: 0.75rem;
-    padding: 1rem;
-    border-bottom: 1px solid var(--border-color);
-    letter-spacing: 0.05em;
-  }
-
-  td {
-    padding: 1rem;
-    border-bottom: 1px solid var(--border-color);
-    color: var(--text-main);
-  }
-
-  tr:last-child td {
-    border-bottom: none;
-  }
-
-  tr:hover td {
-    background-color: rgba(255, 255, 255, 0.01);
-  }
-
-  .client-name {
-    display: block;
-    font-weight: 500;
-    color: #fff;
-  }
-
-  .client-phone {
-    display: block;
-    font-size: 0.75rem;
-    color: var(--accent);
-    margin-top: 0.125rem;
-  }
-
-  .badge-interest {
-    color: #fbbf24;
-    font-weight: 500;
-  }
-
-  .badge-paid {
-    color: var(--accent);
-    font-weight: 500;
-  }
-
-  .empty-state {
-    text-align: center;
-    padding: 3rem;
-    color: var(--text-muted);
-  }
-</style>

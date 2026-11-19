@@ -73,7 +73,12 @@ export const POST: APIRoute = async ({ request }) => {
 
     const token = authHeader.replace('Bearer ', '');
     const supabase = createClient(supabaseUrl, supabaseKey, {
-      auth: { persistSession: false }
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+      auth: { persistSession: false },
     });
 
     // Validar el usuario a partir del token
@@ -88,7 +93,10 @@ export const POST: APIRoute = async ({ request }) => {
         { status: 401, headers: { 'Content-Type': 'application/json' } }
       );
     }
-
+await supabase.auth.setSession({
+  access_token: token,
+  refresh_token: typeof body.refresh_token === 'string' ? body.refresh_token : '',
+});
     // 5. Ejecutar la función RPC en Supabase inyectando el usuario autenticado
     // Nota: Como estamos en backend con el token del usuario, configuramos la sesión supabase
     supabase.auth.setSession({ access_token: token, refresh_token: '' });
@@ -100,7 +108,7 @@ export const POST: APIRoute = async ({ request }) => {
       p_correo: correo ? correo.trim() : null,
       p_notas: notas ? notas.trim() : null,
       p_monto: parseFloat(monto),
-      tasa: parseFloat(tasa),
+      p_tasa: parseFloat(tasa),
       p_fecha_entrega: fecha_entrega,
       p_metodo_pago: metodo_pago
     });

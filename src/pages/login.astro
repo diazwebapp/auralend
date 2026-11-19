@@ -1,0 +1,104 @@
+---
+// Si ya hay una sesión activa, redirigir al panel principal
+// (Opcional, manejado desde el cliente con supabase-js)
+---
+
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Iniciar Sesión - Plataforma de Préstamos</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  </head>
+  <body class="bg-gray-950 text-gray-100 min-h-screen flex items-center justify-center p-6">
+    <main class="w-full max-w-md space-y-6 bg-gray-900 border border-gray-800 p-8 rounded-2xl shadow-2xl">
+      
+      <div class="text-center space-y-2">
+        <h1 class="text-2xl font-bold tracking-tight text-white">Bienvenido de nuevo</h1>
+        <p class="text-sm text-gray-400">Ingresa a tu panel de control financiero</p>
+      </div>
+
+      <div id="error-box" class="hidden bg-red-950/60 border border-red-700 text-red-200 px-4 py-3 rounded-lg text-sm">
+        <!-- Los errores se inyectan aquí -->
+      </div>
+
+      <form id="form-login" class="space-y-4">
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Correo electrónico</label>
+          <input type="email" id="email" required placeholder="admin@tudominio.com"
+            class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition" />
+        </div>
+
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Contraseña</label>
+          <input type="password" id="password" required placeholder="••••••••"
+            class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition" />
+        </div>
+
+        <button type="submit" id="btn-submit"
+          class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-lg text-sm transition cursor-pointer">
+          Iniciar Sesión
+        </button>
+      </form>
+
+      <div class="text-center text-xs text-gray-500 pt-2 border-t border-gray-800">
+        ¿No tienes una cuenta o licencia activa? <a href="#" class="text-emerald-400 hover:underline">Contáctanos</a>
+      </div>
+
+    </main>
+
+    <script>
+      import { supabase } from '../lib/supabase';
+
+      const form = document.getElementById('form-login') as HTMLFormElement;
+      const emailInput = document.getElementById('email') as HTMLInputElement;
+      const passwordInput = document.getElementById('password') as HTMLInputElement;
+      const errorBox = document.getElementById('error-box');
+      const btnSubmit = document.getElementById('btn-submit') as HTMLButtonElement;
+
+      form?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (errorBox) errorBox.classList.add('hidden');
+        btnSubmit.textContent = 'Verificando licencia...';
+        btnSubmit.setAttribute('disabled', 'true');
+
+        const email = emailInput.value.trim();
+        const password = passwordInput.value;
+
+        // 1. Autenticar con Supabase Auth
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (authError) {
+          if (errorBox) {
+            errorBox.textContent = 'Credenciales incorrectas o usuario no registrado.';
+            errorBox.classList.remove('hidden');
+          }
+          btnSubmit.textContent = 'Iniciar Sesión';
+          btnSubmit.removeAttribute('disabled');
+          return;
+        }
+
+        // 2. Comprobar el estado de la licencia (Estilo Netflix)
+        const userId = authData.user?.id;
+        const { data: licenciaData, error: licenciaError } = await supabase
+          .from('licencias')
+          .select('estado, fecha_vencimiento')
+          .eq('admin_id', userId)
+          .single();
+
+        // Si no tiene licencia registrada o está vencida/pendiente
+        if (licenciaError || !licenciaData || licenciaData.estado !== 'activa' || new Date(licenciaData.fecha_vencimiento) < new Date()) {
+          // Redirigir a una página de suscripción vencida
+          window.location.href = '/suscripcion-vencida';
+          return;
+        }
+
+        // 3. Todo OK: Redirigir al Dashboard principal
+        window.location.href = '/';
+      });
+    </script>
+  </body>
+</html>

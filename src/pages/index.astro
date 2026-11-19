@@ -1,0 +1,153 @@
+---
+import LayoutAdmin from '../layouts/LayoutAdmin.astro';
+import { supabase } from '../lib/supabase';
+
+// Consultar la vista de dashboard
+const { data: prestamos, error } = await supabase
+  .from('vista_dashboard_prestamos')
+  .select('*')
+  .order('fecha_entrega', { ascending: false });
+---
+
+<LayoutAdmin title="Panel de Control - Gestión de Préstamos">
+  <div class="dashboard-header">
+    <div>
+      <h1 class="page-title">Cartera de Créditos</h1>
+      <p class="page-subtitle">Monitoreo de capitales, intereses y fechas de corte</p>
+    </div>
+  </div>
+
+  <div class="table-container card">
+    <div class="table-responsive">
+      <table>
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Acreditado</th>
+            <th>Capital Restante</th>
+            <th>Interés Semana</th>
+            <th>Total Pagado</th>
+            <th>Próximo Pago</th>
+            <th style="text-align: right;">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {prestamos && prestamos.length > 0 ? (
+            prestamos.map((p) => (
+              <tr>
+                <td>
+                  <span class="client-name">{p.nombre} {p.apellido}</span>
+                  <span class="client-phone">📱 {p.whatsapp}</span>
+                </td>
+                <td>${p.monto_acreditado}</td>
+                <td><strong style="color: #fff;">${p.capital_restante}</strong></td>
+                <td><span class="badge-interest">${p.interes_pendiente_ciclo}</span></td>
+                <td><span class="badge-paid">${p.total_pagado_historico}</span></td>
+                <td>{p.fecha_proximo_pago}</td>
+                <td style="text-align: right;">
+                  <a href={`/prestamos/${p.prestamo_id}`} class="btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.75rem;">
+                    Historial
+                  </a>
+                </td>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td colspan="7" class="empty-state">
+                No hay créditos registrados todavía.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</LayoutAdmin>
+
+<style>
+  .dashboard-header {
+    margin-bottom: 1.5rem;
+  }
+
+  .page-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  .page-subtitle {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+  }
+
+  /* Estilos de la Tabla */
+  .table-container {
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .table-responsive {
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 0.875rem;
+  }
+
+  th {
+    background-color: rgba(0, 0, 0, 0.2);
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    letter-spacing: 0.05em;
+  }
+
+  td {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-main);
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  tr:hover td {
+    background-color: rgba(255, 255, 255, 0.01);
+  }
+
+  .client-name {
+    display: block;
+    font-weight: 500;
+    color: #fff;
+  }
+
+  .client-phone {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--accent);
+    margin-top: 0.125rem;
+  }
+
+  .badge-interest {
+    color: #fbbf24;
+    font-weight: 500;
+  }
+
+  .badge-paid {
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-muted);
+  }
+</style>

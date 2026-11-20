@@ -108,6 +108,19 @@ if (!id) {
 
 const whatsappClean = cliente?.whatsapp ? String(cliente.whatsapp).replace(/[^0-9]/g, '') : '';
 const estadoActual = String(prestamo?.estado || 'pendiente');
+
+const totalRecargosHistoricos = listaMovimientos
+  .filter((m) => String(m.tipo_movimiento).toUpperCase() === 'RECARGO')
+  .reduce((acc, m) => acc + Number(m.monto_total || 0), 0);
+
+const totalPagadoAInteres = listaMovimientos
+  .filter((m) => String(m.tipo_movimiento).toUpperCase().startsWith('PAGO'))
+  .reduce((acc, m) => acc + Number(m.aplicado_a_interes || 0), 0);
+
+const recargoPendiente = Math.max(
+  0,
+  Number((totalRecargosHistoricos - totalPagadoAInteres).toFixed(2))
+);
 ---
 
 <LayoutAdmin title="Detalle del Préstamo - Auralend">
@@ -136,6 +149,7 @@ const estadoActual = String(prestamo?.estado || 'pendiente');
               <option value="activo" selected={estadoActual === 'activo'}>activo</option>
               <option value="pagado" selected={estadoActual === 'pagado'}>pagado</option>
               <option value="vencido" selected={estadoActual === 'vencido'}>vencido</option>
+              <option value="en_mora" selected={estadoActual === 'en_mora'}>en_mora</option>
             </select>
 
             <button type="button" id="btn-guardar-estado" class="btn-estado">
@@ -212,6 +226,12 @@ const estadoActual = String(prestamo?.estado || 'pendiente');
             <div class="stat-box">
               <span class="label">Interés Pendiente (Ciclo)</span>
               <span class="stat-yellow">${Number(prestamo.interes_pendiente_ciclo).toFixed(2)}</span>
+            </div>
+            <div class="stat-box">
+              <span class="label">Recargos por Atraso</span>
+              <span class={recargoPendiente > 0 ? 'stat-red' : 'valor-muted'}>
+                ${recargoPendiente.toFixed(2)}
+              </span>
             </div>
             <div class="stat-box">
               <span class="label">Próximo Pago / Corte</span>
@@ -784,15 +804,22 @@ const estadoActual = String(prestamo?.estado || 'pendiente');
       gap: 1rem;
     }
     @media (min-width: 640px) {
-      .info-grid,
-      .stats-grid {
+      .info-grid {
         grid-template-columns: repeat(3, 1fr);
+      }
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
       }
       .detail-header h1 {
         font-size: 1.5rem;
       }
       .col-span-2 {
         grid-column: span 2;
+      }
+    }
+    @media (min-width: 900px) {
+      .stats-grid {
+        grid-template-columns: repeat(4, 1fr);
       }
     }
     .label {
@@ -820,6 +847,11 @@ const estadoActual = String(prestamo?.estado || 'pendiente');
     }
     .stat-yellow {
       color: #fbbf24;
+      font-weight: 700;
+      font-size: 1.1rem;
+    }
+    .stat-red {
+      color: #f87171;
       font-weight: 700;
       font-size: 1.1rem;
     }
@@ -873,6 +905,10 @@ const estadoActual = String(prestamo?.estado || 'pendiente');
     }
     .badge-pago {
       color: #34d399;
+      font-weight: 600;
+    }
+    .badge-recargo {
+      color: #f87171;
       font-weight: 600;
     }
     .alert-error {

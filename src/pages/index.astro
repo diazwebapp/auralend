@@ -9,9 +9,7 @@ import LayoutAdmin from '../layouts/LayoutAdmin.astro';
         <h1>Cartera de Créditos</h1>
         <p class="text-muted">Monitoreo de capitales, intereses y fechas de corte</p>
       </div>
-      <div class="home-actions">
-        <a href="/prestamos/nuevo" class="btn-primary">+ Crédito</a>
-      </div>
+     
     </div>
 
     <div id="home-error" class="alert-error" style="display: none;"></div>
@@ -134,7 +132,7 @@ import LayoutAdmin from '../layouts/LayoutAdmin.astro';
                 const waDigits = String(whatsapp).replace(/[^0-9]/g, '');
 
                 return `
-                  <tr>
+                  <tr data-estado="${p.estado || 'activo'}" >
                     <td>
                       <div class="client-cell">
                         <strong class="text-white">${nombreCompleto}</strong>
@@ -204,5 +202,34 @@ import LayoutAdmin from '../layouts/LayoutAdmin.astro';
       background-color: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.4);
       color: #fca5a5; padding: 0.75rem; border-radius: 0.5rem; margin-bottom: 1rem; font-size: 0.85rem;
     }
+
+    /* En la fila o badge de estado del dashboard */
+.fila-mora,
+tr[data-estado="vencido"],
+tr[data-estado="en_mora"] {
+  background-color: rgba(239, 68, 68, 0.08);
+  border-left: 3px solid #ef4444;
+}
+
+.badge-estado-vencido,
+.badge-estado-en_mora,
+.badge-estado-mora {
+  background-color: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  font-weight: 700;
+}
+
+.badge-estado-pendiente {
+  background-color: rgba(251, 191, 36, 0.15);
+  color: #fcd34d;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+}
+
+.badge-estado-activo {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.45);
+}
   </style>
 </LayoutAdmin>

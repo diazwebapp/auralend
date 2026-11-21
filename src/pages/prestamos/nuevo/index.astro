@@ -1,0 +1,244 @@
+---
+import LayoutAdmin from '../../../layouts/LayoutAdmin.astro';
+import { createClient } from '@supabase/supabase-js';
+
+const token = Astro.cookies.get('sb-access-token')?.value;
+const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
+const supabaseKey = import.meta.env.PUBLIC_SUPABASE_KEY;
+
+let errorSSR: string | null = null;
+let clientesExistentes: any[] = [];
+
+if (!token) {
+  errorSSR = 'No se encontró la cookie sb-access-token en el servidor.';
+} else {
+  const supabaseServer = createClient(supabaseUrl, supabaseKey, {
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    auth: { persistSession: false },
+  });
+
+  const { data: { user }, error: userError } = await supabaseServer.auth.getUser(token);
+
+  if (userError || !user) {
+    errorSSR = `Sesión inválida en SSR: ${userError?.message || 'usuario no encontrado'}.`;
+  } else {
+    const { data: cData, error: cError } = await supabaseServer
+      .from('clientes')
+      .select('id, nombre, apellido, cedula')
+      .order('creado_en', { ascending: false })
+      .limit(500);
+
+    if (cError) {
+      errorSSR = `No se pudieron cargar los clientes: ${cError.message}`;
+    } else {
+      clientesExistentes = cData ?? [];
+    }
+  }
+}
+
+const payloadClientes = encodeURIComponent(JSON.stringify(clientesExistentes));
+---
+
+<LayoutAdmin title="Verificar Cédula - Nuevo Préstamo">
+  <div id="check-cedula-app" class="wrap-narrow" data-clientes={payloadClientes}>
+    <div class="top-nav">
+      <a href="/" class="back-link">&larr; Volver a la cartera</a>
+      <a href="/busqueda" class="btn-ghost">Buscar</a>
+    </div>
+
+    <h1>Nuevo Préstamo</h1>
+    <p class="sub">Ingresa la cédula para continuar al préstamo o registrar el cliente si es nuevo.</p>
+
+    {errorSSR ? (
+      <div class="alert-error">
+        <strong>Error:</strong> {errorSSR}
+      </div>
+    ) : (
+      <form id="form-verificar-cedula" class="panel">
+        <div class="form-group">
+          <label for="cedula-input">Cédula del Cliente *</label>
+          <input
+            type="text"
+            id="cedula-input"
+            required
+            placeholder="Ej. 23413903 o V-23413903"
+            autocomplete="off"
+            autofocus
+          />
+        </div>
+
+        <div id="check-msg" class="msg-box" style="display: none;"></div>
+
+        <button type="submit" id="btn-continuar" class="btn-primary w-full">
+          Continuar
+        </button>
+      </form>
+    )}
+  </div>
+
+  <script>
+    import { supabase } from '../../../lib/supabase';
+
+    const root = document.getElementById('check-cedula-app');
+    const raw = root?.dataset.clientes || '';
+    let clientes: any[] = [];
+    try {
+      const parsed = JSON.parse(decodeURIComponent(raw));
+      if (Array.isArray(parsed)) clientes = parsed;
+    } catch {
+      // ignorar
+    }
+
+    const form = document.getElementById('form-verificar-cedula') as HTMLFormElement | null;
+    const inputCedula = document.getElementById('cedula-input') as HTMLInputElement | null;
+    const btnContinuar = document.getElementById('btn-continuar') as HTMLButtonElement | null;
+    const msgBox = document.getElementById('check-msg');
+
+    function normalizar(v: string): string {
+      return v.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
+    }
+
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const cedulaRaw = inputCedula?.value.trim() || '';
+      const cedulaNorm = normalizar(cedulaRaw);
+      if (!cedulaNorm) return;
+
+      if (btnContinuar) {
+        btnContinuar.disabled = true;
+        btnContinuar.textContent = 'Verificando...';
+      }
+
+      try {
+        let encontrado = clientes.find(
+          (c) =>
+            normalizar(String(c.cedula || '')) === cedulaNorm ||
+            String(c.cedula || '').trim().toLowerCase() === cedulaRaw.toLowerCase()
+        );
+
+        if (!encontrado) {
+          const { data } = await supabase
+            .from('clientes')
+            .select('id, cedula')
+            .ilike('cedula', `%${cedulaRaw}%`)
+            .limit(5);
+
+          if (Array.isArray(data) && data.length > 0) {
+            encontrado =
+              data.find((c) => normalizar(String(c.cedula || '')) === cedulaNorm) || data[0];
+          }
+        }
+
+        if (encontrado?.id) {
+          window.location.href = `/prestamos/nuevo/${encodeURIComponent(String(encontrado.id))}`;
+        } else {
+          window.location.href = `/clientes/nuevo?cedula=${encodeURIComponent(cedulaRaw)}`;
+        }
+      } catch {
+        if (msgBox) {
+          msgBox.textContent = 'No se pudo verificar la cédula. Intenta nuevamente.';
+          msgBox.style.display = 'block';
+        }
+        if (btnContinuar) {
+          btnContinuar.disabled = false;
+          btnContinuar.textContent = 'Continuar';
+        }
+      }
+    });
+
+    inputCedula?.focus();
+  </script>
+
+  <style>
+    .wrap-narrow {
+      max-width: 520px;
+      margin: 0 auto;
+      color: #f9fafb;
+    }
+    .top-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+    .back-link {
+      font-size: 0.82rem;
+      color: #34d399;
+      text-decoration: none;
+    }
+    .btn-ghost {
+      background: #1f2937;
+      color: #e5e7eb;
+      border: 1px solid #374151;
+      padding: 0.35rem 0.7rem;
+      border-radius: 0.375rem;
+      font-size: 0.78rem;
+      text-decoration: none;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.4rem;
+      color: #fff;
+    }
+    .sub {
+      margin: 0.3rem 0 1rem 0;
+      font-size: 0.84rem;
+      color: #9ca3af;
+    }
+    .panel {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 0.65rem;
+      padding: 1.15rem;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      margin-bottom: 1rem;
+    }
+    label {
+      font-size: 0.8rem;
+      color: #d1d5db;
+    }
+    input {
+      background: #0b1120;
+      color: #f9fafb;
+      border: 1px solid #374151;
+      border-radius: 0.375rem;
+      padding: 0.55rem 0.75rem;
+    }
+    .btn-primary {
+      background: #10b981;
+      color: #06281e;
+      border: none;
+      padding: 0.6rem 1rem;
+      border-radius: 0.375rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .w-full {
+      width: 100%;
+    }
+    .msg-box {
+      margin-bottom: 0.85rem;
+      padding: 0.6rem 0.75rem;
+      border-radius: 0.4rem;
+      background: rgba(239, 68, 68, 0.14);
+      border: 1px solid #ef4444;
+      color: #fca5a5;
+      font-size: 0.8rem;
+    }
+    .alert-error {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.45);
+      color: #fca5a5;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+    }
+  </style>
+</LayoutAdmin>

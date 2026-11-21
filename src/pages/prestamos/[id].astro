@@ -106,7 +106,6 @@ if (!id) {
   }
 }
 
-const whatsappClean = cliente?.whatsapp ? String(cliente.whatsapp).replace(/[^0-9]/g, '') : '';
 const estadoActual = String(prestamo?.estado || 'pendiente');
 
 const totalRecargosHistoricos = listaMovimientos
@@ -127,10 +126,18 @@ const recargoPendiente = Math.max(
   <div id="detail-app" class="detail-wrapper" data-prestamo-id={id}>
     <div class="detail-header">
       <div class="header-top-row">
-        <a href="/" class="back-link">&larr; Volver a la cartera</a>
+        <button type="button" id="btn-atras-historia" class="back-link">
+          &larr; Atrás
+        </button>
 
-        {!errorSSR && prestamo && (
+        {!errorSSR && prestamo && cliente && (
           <div class="header-actions">
+            <a
+              href={`/clientes/${encodeURIComponent(String(cliente.id))}`}
+              class="btn-cliente-link"
+            >
+              Ficha del cliente
+            </a>
             <button type="button" id="btn-ver-contrato" class="btn-contrato">
               Ver contrato HTML
             </button>
@@ -139,7 +146,15 @@ const recargoPendiente = Math.max(
       </div>
 
       <div class="title-status-row">
-        <h1>Gestión de Crédito y Pagos</h1>
+        <div>
+          <h1>Gestión de Crédito y Pagos</h1>
+          {!errorSSR && cliente && (
+            <p class="subtitulo-cliente">
+              {cliente.nombre} {cliente.apellido} · Cédula: <strong>{cliente.cedula ?? '—'}</strong>
+            </p>
+          )}
+        </div>
+
         {!errorSSR && prestamo && (
           <div class="estado-control-box">
             <span class="badge-estado" id="badge-estado-prestamo">{estadoActual}</span>
@@ -167,7 +182,6 @@ const recargoPendiente = Math.max(
       </div>
     ) : (
       <div class="space-y-4">
-        <!-- Visor HTML del contrato del préstamo -->
         <div id="visor-contrato-panel" class="panel-claro contrato-card" style="display: none;">
           <div class="contrato-toolbar">
             <h3>Contrato del Préstamo</h3>
@@ -181,39 +195,6 @@ const recargoPendiente = Math.max(
             </div>
           </div>
           <div id="contrato-html-body" class="contrato-html-box" set:html={contratoHtmlSSR} />
-        </div>
-
-        <div class="panel-oscuro info-card">
-          <h3>Información del Cliente</h3>
-          <div class="info-grid">
-            <div>
-              <span class="label">Cliente</span>
-              <strong class="valor-claro">{cliente.nombre} {cliente.apellido}</strong>
-            </div>
-            <div>
-              <span class="label">Cédula</span>
-              <strong class="valor-claro">{cliente.cedula ?? '—'}</strong>
-            </div>
-            <div>
-              <span class="label">WhatsApp</span>
-              <a
-                href={`https://wa.me/${whatsappClean}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="whatsapp-link"
-              >
-                📱 {cliente.whatsapp}
-              </a>
-            </div>
-            <div>
-              <span class="label">Correo</span>
-              <span class="valor-muted">{cliente.correo || 'No registrado'}</span>
-            </div>
-            <div class="col-span-2">
-              <span class="label">Notas / Garantía</span>
-              <span class="valor-muted">{cliente.notas || 'Sin notas ni garantías registradas.'}</span>
-            </div>
-          </div>
         </div>
 
         <div class="panel-oscuro stats-card">
@@ -340,6 +321,15 @@ const recargoPendiente = Math.max(
 
     const appEl = document.getElementById('detail-app');
     const prestamoId = appEl?.dataset.prestamoId;
+
+    const btnAtras = document.getElementById('btn-atras-historia');
+    btnAtras?.addEventListener('click', () => {
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        window.location.href = '/';
+      }
+    });
 
     const formPago = document.getElementById('form-pago');
     const btnPagar = document.getElementById('btn-pagar');
@@ -620,13 +610,49 @@ const recargoPendiente = Math.max(
       gap: 0.75rem;
       flex-wrap: wrap;
     }
+    .header-actions {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .back-link {
+      background: transparent;
+      border: none;
+      padding: 0.25rem 0;
+      font-size: 0.813rem;
+      color: #34d399;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .back-link:hover {
+      text-decoration: underline;
+    }
+    .btn-cliente-link {
+      background: #1f2937;
+      border: 1px solid #374151;
+      color: #e5e7eb;
+      padding: 0.45rem 0.85rem;
+      border-radius: 0.375rem;
+      font-size: 0.813rem;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .btn-cliente-link:hover {
+      background: #374151;
+    }
     .title-status-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 0.75rem;
       flex-wrap: wrap;
-      margin-top: 0.35rem;
+      margin-top: 0.5rem;
+    }
+    .subtitulo-cliente {
+      margin: 0.2rem 0 0 0;
+      font-size: 0.82rem;
+      color: #9ca3af;
     }
     .estado-control-box {
       display: flex;
@@ -770,11 +796,6 @@ const recargoPendiente = Math.max(
     .contrato-html-box {
       overflow-x: auto;
     }
-    .back-link {
-      font-size: 0.813rem;
-      color: #34d399;
-      text-decoration: none;
-    }
     .detail-header h1 {
       font-size: 1.25rem;
       font-weight: 700;
@@ -784,7 +805,6 @@ const recargoPendiente = Math.max(
     .space-y-4 > * + * {
       margin-top: 1rem;
     }
-    .info-card h3,
     .stats-card h3,
     .payment-card h3,
     .history-card h3 {
@@ -797,24 +817,17 @@ const recargoPendiente = Math.max(
       border-bottom: 1px solid #1f2937;
       padding-bottom: 0.5rem;
     }
-    .info-grid,
     .stats-grid {
       display: grid;
       grid-template-columns: 1fr;
       gap: 1rem;
     }
     @media (min-width: 640px) {
-      .info-grid {
-        grid-template-columns: repeat(3, 1fr);
-      }
       .stats-grid {
         grid-template-columns: repeat(2, 1fr);
       }
       .detail-header h1 {
         font-size: 1.5rem;
-      }
-      .col-span-2 {
-        grid-column: span 2;
       }
     }
     @media (min-width: 900px) {
@@ -828,11 +841,6 @@ const recargoPendiente = Math.max(
       color: #9ca3af;
       margin-bottom: 0.25rem;
       text-transform: uppercase;
-    }
-    .whatsapp-link {
-      color: #34d399;
-      text-decoration: none;
-      font-weight: 500;
     }
     .stat-box {
       background-color: #0b1120;

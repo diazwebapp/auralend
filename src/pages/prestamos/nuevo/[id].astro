@@ -1,0 +1,327 @@
+---
+import LayoutAdmin from '../../../layouts/LayoutAdmin.astro';
+import { createClient } from '@supabase/supabase-js';
+
+const { id } = Astro.params;
+const token = Astro.cookies.get('sb-access-token')?.value;
+const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
+const supabaseKey = import.meta.env.PUBLIC_SUPABASE_KEY;
+
+let errorSSR: string | null = null;
+let cliente: any = null;
+
+if (!id) {
+  errorSSR = 'Falta el UUID del cliente en la URL.';
+} else if (!token) {
+  errorSSR = 'No se encontró la cookie sb-access-token en el servidor.';
+} else {
+  const supabaseServer = createClient(supabaseUrl, supabaseKey, {
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    auth: { persistSession: false },
+  });
+
+  const { data: { user }, error: userError } = await supabaseServer.auth.getUser(token);
+
+  if (userError || !user) {
+    errorSSR = `Sesión inválida en SSR: ${userError?.message || 'usuario no encontrado'}.`;
+  } else {
+    const { data: cData, error: cError } = await supabaseServer
+      .from('clientes')
+      .select('id, nombre, apellido, cedula, whatsapp')
+      .eq('id', id)
+      .single();
+
+    if (cError || !cData) {
+      errorSSR = `No se encontró el cliente (${id}): ${cError?.message || 'sin datos'}.`;
+    } else {
+      cliente = cData;
+    }
+  }
+}
+
+const fechaHoyIso = new Date().toISOString().split('T')[0];
+const fechaCorteDefaultIso = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+---
+
+<LayoutAdmin title="Emitir Préstamo - Auralend">
+  <div id="emitir-prestamo-app" class="wrap" data-cliente-id={cliente?.id || ''}>
+    <div class="top-nav">
+      <a href="/prestamos/nuevo" class="back-link">&larr; Verificar otra cédula</a>
+      {cliente && (
+        <a href={`/clientes/${encodeURIComponent(String(cliente.id))}`} class="btn-ghost">
+          Ver ficha del cliente
+        </a>
+      )}
+    </div>
+
+    {errorSSR ? (
+      <div class="alert-error">
+        <strong>Error:</strong> {errorSSR}
+      </div>
+    ) : (
+      <div class="space-y-4">
+        <div class="panel">
+          <h3>CLIENTE VINCULADO</h3>
+          <div class="cliente-resumen">
+            <strong>{cliente.nombre} {cliente.apellido}</strong>
+            <span>Cédula: <strong>{cliente.cedula || '—'}</strong></span>
+            <span>UUID: <code class="uuid-tag">{cliente.id}</code></span>
+          </div>
+        </div>
+
+        <form id="form-emitir-prestamo" class="panel">
+          <h3>CONDICIONES DEL PRÉSTAMO</h3>
+
+          <div class="grid-2">
+            <div class="form-group">
+              <label for="p-monto">Monto a Acreditar (USDT / USD) *</label>
+              <input type="number" id="p-monto" step="0.01" min="0.01" required placeholder="Ej. 150.00" autofocus />
+            </div>
+
+            <div class="form-group">
+              <label for="p-tasa">Tasa de Interés por Ciclo (%) *</label>
+              <input type="number" id="p-tasa" step="0.01" min="0" value="20.00" required />
+            </div>
+
+            <div class="form-group">
+              <label for="p-entrega">Fecha de Entrega *</label>
+              <input type="date" id="p-entrega" value={fechaHoyIso} required />
+            </div>
+
+            <div class="form-group">
+              <label for="p-corte">Fecha Próximo Pago / Corte *</label>
+              <input type="date" id="p-corte" value={fechaCorteDefaultIso} required />
+            </div>
+
+            <div class="form-group">
+              <label for="p-estado">Estado Inicial</label>
+              <select id="p-estado">
+                <option value="activo" selected>activo</option>
+                <option value="pendiente">pendiente</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="p-metodo">Método de Desembolso</label>
+              <input type="text" id="p-metodo" value="USDT" />
+            </div>
+          </div>
+
+          <div id="p-error" class="alert-error" style="display: none;"></div>
+
+          <button type="submit" id="btn-emitir" class="btn-primary w-full mt-3">
+            Emitir Préstamo
+          </button>
+        </form>
+      </div>
+    )}
+  </div>
+
+  <script>
+    import { supabase } from '../../../lib/supabase';
+
+    const root = document.getElementById('emitir-prestamo-app');
+    const clienteId = root?.dataset.clienteId || '';
+    const form = document.getElementById('form-emitir-prestamo') as HTMLFormElement | null;
+    const btn = document.getElementById('btn-emitir') as HTMLButtonElement | null;
+    const errBox = document.getElementById('p-error');
+
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (errBox) errBox.style.display = 'none';
+
+      const monto = parseFloat(
+        String((document.getElementById('p-monto') as HTMLInputElement | null)?.value || '0').replace(',', '.')
+      );
+      const tasa = parseFloat(
+        String((document.getElementById('p-tasa') as HTMLInputElement | null)?.value || '20').replace(',', '.')
+      );
+      const fechaEntrega =
+        (document.getElementById('p-entrega') as HTMLInputElement | null)?.value ||
+        new Date().toISOString().split('T')[0];
+      const fechaProximoPago =
+        (document.getElementById('p-corte') as HTMLInputElement | null)?.value || null;
+      const estado =
+        (document.getElementById('p-estado') as HTMLSelectElement | null)?.value || 'activo';
+      const metodoPago =
+        (document.getElementById('p-metodo') as HTMLInputElement | null)?.value.trim() || 'USDT';
+
+      try {
+        if (!clienteId) throw new Error('No se encontró el UUID del cliente.');
+        if (!Number.isFinite(monto) || monto <= 0) {
+          throw new Error('Ingresa un monto válido mayor a 0.');
+        }
+
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = 'Emitiendo préstamo...';
+        }
+
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) throw new Error('No hay sesión activa.');
+
+        const res = await fetch('/api/prestamos/crear', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            cliente_id: clienteId,
+            monto,
+            tasa: Number.isFinite(tasa) && tasa >= 0 ? tasa : 20.0,
+            fecha_entrega: fechaEntrega,
+            fecha_proximo_pago: fechaProximoPago,
+            estado,
+            metodo_pago: metodoPago,
+          }),
+        });
+
+        const raw = await res.text();
+        let json: any;
+        try {
+          json = JSON.parse(raw);
+        } catch {
+          throw new Error(`Respuesta inválida (${res.status}) al crear el préstamo.`);
+        }
+
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.error || `Error HTTP ${res.status}`);
+        }
+
+        const nuevoId = json.data?.id || json.data?.prestamo_id;
+        window.location.href = nuevoId
+          ? `/prestamos/${encodeURIComponent(String(nuevoId))}`
+          : `/clientes/${encodeURIComponent(clienteId)}`;
+      } catch (err) {
+        if (errBox) {
+          errBox.textContent = err instanceof Error ? err.message : 'Error al emitir el préstamo.';
+          errBox.style.display = 'block';
+        }
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Emitir Préstamo';
+        }
+      }
+    });
+  </script>
+
+  <style>
+    .wrap {
+      max-width: 760px;
+      margin: 0 auto;
+      color: #f9fafb;
+    }
+    .top-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+    .back-link {
+      font-size: 0.82rem;
+      color: #34d399;
+      text-decoration: none;
+    }
+    .btn-ghost {
+      background: #1f2937;
+      color: #e5e7eb;
+      border: 1px solid #374151;
+      padding: 0.35rem 0.7rem;
+      border-radius: 0.375rem;
+      font-size: 0.78rem;
+      text-decoration: none;
+    }
+    .space-y-4 > * + * {
+      margin-top: 1rem;
+    }
+    .panel {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 0.65rem;
+      padding: 1.15rem;
+    }
+    .panel h3 {
+      margin: 0 0 0.9rem 0;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+      color: #9ca3af;
+      border-bottom: 1px solid #1f2937;
+      padding-bottom: 0.5rem;
+    }
+    .cliente-resumen {
+      display: flex;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+      align-items: center;
+      font-size: 0.88rem;
+      color: #d1d5db;
+    }
+    .cliente-resumen strong {
+      color: #ffffff;
+    }
+    .uuid-tag {
+      font-size: 0.75rem;
+      color: #6ee7b7;
+      background: #0b1120;
+      padding: 0.15rem 0.45rem;
+      border-radius: 0.25rem;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.9rem;
+    }
+    @media (min-width: 640px) {
+      .grid-2 {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    label {
+      font-size: 0.8rem;
+      color: #d1d5db;
+    }
+    input,
+    select {
+      background: #0b1120;
+      color: #f9fafb;
+      border: 1px solid #374151;
+      border-radius: 0.375rem;
+      padding: 0.55rem 0.75rem;
+    }
+    .btn-primary {
+      background: #10b981;
+      color: #06281e;
+      border: none;
+      padding: 0.6rem 1rem;
+      border-radius: 0.375rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .w-full {
+      width: 100%;
+    }
+    .mt-3 {
+      margin-top: 0.9rem;
+    }
+    .alert-error {
+      margin-top: 0.75rem;
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.45);
+      color: #fca5a5;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      font-size: 0.82rem;
+    }
+  </style>
+</LayoutAdmin>

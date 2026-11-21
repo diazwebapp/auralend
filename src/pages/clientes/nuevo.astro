@@ -1,507 +1,235 @@
 ---
 import LayoutAdmin from '../../layouts/LayoutAdmin.astro';
+
+const cedulaInicial = Astro.url.searchParams.get('cedula') || '';
 ---
 
-<LayoutAdmin title="Nuevo Crédito">
-  <section id="nuevo-prestamo-app" class="card-container">
-    <div class="header-row">
-      <div>
-        <h1>Registrar Nuevo Crédito</h1>
-        <p class="subtitle">
-          El crédito quedará en estado <strong>pendiente</strong> mientras el cliente revisa y firma el contrato.
-        </p>
-      </div>
+<LayoutAdmin title="Registrar Cliente - Auralend">
+  <div class="cli-nuevo-wrap">
+    <div class="top-nav">
+      <a href="/prestamos/nuevo" class="back-link">&larr; Cambiar cédula</a>
+      <a href="/" class="btn-ghost">Cartera</a>
     </div>
 
-    <form id="form-nuevo-prestamo" class="loan-form" novalidate>
-      <div class="grid-2">
-        <div class="form-group">
-          <label for="nombre">Nombre *</label>
+    <div class="panel">
+      <h3>CÉDULA NUEVA — REGISTRAR CLIENTE</h3>
+
+      <form id="form-crear-cliente" class="grid-2">
+        <div class="form-group col-span-2">
+          <label for="cli-cedula">Cédula *</label>
           <input
             type="text"
-            id="nombre"
-            name="nombre"
+            id="cli-cedula"
+            value={cedulaInicial}
             required
-            placeholder="Ej. Carlos"
+            placeholder="Ej. 23413903"
           />
         </div>
 
         <div class="form-group">
-          <label for="apellido">Apellido *</label>
-          <input
-            type="text"
-            id="apellido"
-            name="apellido"
-            required
-            placeholder="Ej. Pérez"
-          />
-        </div>
-      </div>
-
-      <div class="grid-3">
-        <div class="form-group">
-          <label for="cedula">Cédula (Numérica) *</label>
-          <input
-            type="text"
-            id="cedula"
-            name="cedula"
-            inputmode="numeric"
-            pattern="[0-9]*"
-            required
-            placeholder="Ej. 27157488"
-          />
+          <label for="cli-nombre">Nombre *</label>
+          <input type="text" id="cli-nombre" required placeholder="Nombre" autofocus />
         </div>
 
         <div class="form-group">
-          <label for="whatsapp">WhatsApp *</label>
-          <input
-            type="text"
-            id="whatsapp"
-            name="whatsapp"
-            required
-            placeholder="Ej. +584121234567"
-          />
+          <label for="cli-apellido">Apellido *</label>
+          <input type="text" id="cli-apellido" required placeholder="Apellido" />
         </div>
 
         <div class="form-group">
-          <label for="correo">Correo (Opcional)</label>
-          <input
-            type="email"
-            id="correo"
-            name="correo"
-            placeholder="cliente@correo.com"
-          />
-        </div>
-      </div>
-
-      <div class="grid-3">
-        <div class="form-group">
-          <label for="monto">Monto a Acreditar *</label>
-          <input
-            type="number"
-            id="monto"
-            name="monto"
-            step="0.01"
-            min="0.01"
-            required
-            placeholder="100.00"
-          />
+          <label for="cli-whatsapp">WhatsApp</label>
+          <input type="text" id="cli-whatsapp" placeholder="Ej. +584140000000" />
         </div>
 
         <div class="form-group">
-          <label for="tasa">Tasa de Interés (%)</label>
-          <input
-            type="number"
-            id="tasa"
-            name="tasa"
-            step="0.01"
-            value="20"
-          />
+          <label for="cli-correo">Correo (Opcional)</label>
+          <input type="email" id="cli-correo" placeholder="correo@ejemplo.com" />
         </div>
 
-        <div class="form-group">
-          <label for="fecha_entrega">Fecha de Entrega</label>
-          <input
-            type="date"
-            id="fecha_entrega"
-            name="fecha_entrega"
-          />
+        <div id="cli-error" class="alert-error col-span-2" style="display: none;"></div>
+
+        <div class="col-span-2 actions-end">
+          <button type="submit" id="btn-guardar-cliente" class="btn-primary">
+            Guardar y Continuar al Préstamo &rarr;
+          </button>
         </div>
-      </div>
-
-      <div class="grid-2">
-        <div class="form-group">
-          <label for="metodo_pago">Método de Entrega / Pago</label>
-          <select id="metodo_pago" name="metodo_pago">
-            <option value="USDT - Binance Pay">USDT - Binance Pay</option>
-            <option value="Pago Móvil / Bolívares">Pago Móvil / Bolívares</option>
-            <option value="Zinli / Wally">Zinli / Wally</option>
-            <option value="Efectivo">Efectivo</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label for="notas">Garantía / Observaciones</label>
-          <input
-            type="text"
-            id="notas"
-            name="notas"
-            placeholder="Notas o acuerdo adicional"
-          />
-        </div>
-      </div>
-
-      <div id="form-error" class="alert-error" style="display: none;"></div>
-      <div id="form-info" class="alert-info" style="display: none;"></div>
-
-      <div class="acciones-formulario">
-        <button type="button" id="btn-leer-contrato" class="btn-secondary">
-          Leer contrato
-        </button>
-
-        <button type="submit" id="btn-crear" class="btn-primary">
-          Crear Crédito en Estado Pendiente
-        </button>
-      </div>
-    </form>
-
-    <!-- Panel de lectura e impresión del contrato -->
-    <div id="contrato-panel" class="contrato-panel" style="display: none;">
-      <div class="contrato-actions">
-        <button type="button" id="btn-imprimir-contrato" class="btn-secondary">
-          Imprimir / Guardar PDF
-        </button>
-        <button type="button" id="btn-cerrar-contrato" class="btn-secondary">
-          Volver al formulario
-        </button>
-        <button type="button" id="btn-ir-detalle" class="btn-primary" style="display: none;">
-          Ir al Detalle del Préstamo →
-        </button>
-      </div>
-
-      <div id="contrato-preview" class="contrato-preview"></div>
+      </form>
     </div>
-  </section>
+  </div>
+
+  <script>
+    import { supabase } from '../../lib/supabase';
+
+    const form = document.getElementById('form-crear-cliente') as HTMLFormElement | null;
+    const btn = document.getElementById('btn-guardar-cliente') as HTMLButtonElement | null;
+    const errBox = document.getElementById('cli-error');
+
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (errBox) errBox.style.display = 'none';
+
+      const cedula =
+        (document.getElementById('cli-cedula') as HTMLInputElement | null)?.value.trim() || '';
+      const nombre =
+        (document.getElementById('cli-nombre') as HTMLInputElement | null)?.value.trim() || '';
+      const apellido =
+        (document.getElementById('cli-apellido') as HTMLInputElement | null)?.value.trim() || '';
+      const whatsapp =
+        (document.getElementById('cli-whatsapp') as HTMLInputElement | null)?.value.trim() || '';
+      const correo =
+        (document.getElementById('cli-correo') as HTMLInputElement | null)?.value.trim() || '';
+
+      try {
+        if (!cedula || !nombre || !apellido) {
+          throw new Error('Cédula, nombre y apellido son obligatorios.');
+        }
+
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = 'Guardando cliente...';
+        }
+
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) throw new Error('No hay sesión activa.');
+
+        const res = await fetch('/api/clientes/crear', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            cedula,
+            nombre,
+            apellido,
+            whatsapp: whatsapp || null,
+            correo: correo || null,
+          }),
+        });
+
+        const raw = await res.text();
+        let json: any;
+        try {
+          json = JSON.parse(raw);
+        } catch {
+          throw new Error(`Respuesta inválida (${res.status}) al registrar el cliente.`);
+        }
+
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.error || `Error HTTP ${res.status}`);
+        }
+
+        const nuevoClienteId = json.data?.id || json.data?.cliente_id;
+        if (!nuevoClienteId) {
+          throw new Error('El servidor no devolvió el UUID del cliente creado.');
+        }
+
+        window.location.href = `/prestamos/nuevo/${encodeURIComponent(String(nuevoClienteId))}`;
+      } catch (err) {
+        if (errBox) {
+          errBox.textContent =
+            err instanceof Error ? err.message : 'Error al registrar el cliente.';
+          errBox.style.display = 'block';
+        }
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Guardar y Continuar al Préstamo →';
+        }
+      }
+    });
+  </script>
+
+  <style>
+    .cli-nuevo-wrap {
+      max-width: 760px;
+      margin: 0 auto;
+      color: #f9fafb;
+    }
+    .top-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+    .back-link {
+      font-size: 0.82rem;
+      color: #34d399;
+      text-decoration: none;
+    }
+    .btn-ghost {
+      background: #1f2937;
+      color: #e5e7eb;
+      border: 1px solid #374151;
+      padding: 0.35rem 0.7rem;
+      border-radius: 0.375rem;
+      font-size: 0.78rem;
+      text-decoration: none;
+    }
+    .panel {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 0.65rem;
+      padding: 1.2rem;
+    }
+    .panel h3 {
+      margin: 0 0 1rem 0;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+      color: #9ca3af;
+      border-bottom: 1px solid #1f2937;
+      padding-bottom: 0.55rem;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.95rem;
+    }
+    @media (min-width: 640px) {
+      .grid-2 {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .col-span-2 {
+        grid-column: span 2;
+      }
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    label {
+      font-size: 0.8rem;
+      color: #d1d5db;
+    }
+    input {
+      background: #0b1120;
+      color: #f9fafb;
+      border: 1px solid #374151;
+      border-radius: 0.375rem;
+      padding: 0.55rem 0.75rem;
+    }
+    .actions-end {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 0.25rem;
+    }
+    .btn-primary {
+      background: #10b981;
+      color: #06281e;
+      border: none;
+      padding: 0.6rem 1.05rem;
+      border-radius: 0.375rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .alert-error {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.45);
+      color: #fca5a5;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      font-size: 0.82rem;
+    }
+  </style>
 </LayoutAdmin>
-
-<script>
-  import { supabase } from '../../lib/supabase';
-  import { renderizarContratoHtml } from '../../lib/plantillaContrato';
-
-  const fechaInput = document.getElementById('fecha_entrega');
-  if (fechaInput && 'value' in fechaInput && !fechaInput.value) {
-    fechaInput.value = new Date().toISOString().split('T')[0];
-  }
-
-  const cedulaInput = document.getElementById('cedula');
-  cedulaInput?.addEventListener('input', () => {
-    if ('value' in cedulaInput) {
-      cedulaInput.value = String(cedulaInput.value).replace(/\D/g, '');
-    }
-  });
-
-  const form = document.getElementById('form-nuevo-prestamo');
-  const errorBox = document.getElementById('form-error');
-  const infoBox = document.getElementById('form-info');
-  const btnCrear = document.getElementById('btn-crear');
-  const btnLeerContrato = document.getElementById('btn-leer-contrato');
-  const btnCerrarContrato = document.getElementById('btn-cerrar-contrato');
-  const btnImprimir = document.getElementById('btn-imprimir-contrato');
-  const btnIrDetalle = document.getElementById('btn-ir-detalle');
-  const contratoPanel = document.getElementById('contrato-panel');
-  const contratoPreview = document.getElementById('contrato-preview');
-
-  let prestamoCreadoId: string | null = null;
-  let ultimoContratoHtml: string | null = null;
-
-  function mostrarError(msg: string) {
-    if (infoBox) infoBox.style.display = 'none';
-    if (errorBox) {
-      errorBox.textContent = msg;
-      errorBox.style.display = 'block';
-    }
-  }
-
-  function mostrarInfo(msg: string) {
-    if (errorBox) errorBox.style.display = 'none';
-    if (infoBox) {
-      infoBox.textContent = msg;
-      infoBox.style.display = 'block';
-    }
-  }
-
-  function obtenerDatosFormulario() {
-    const getVal = (id: string) => {
-      const el = document.getElementById(id);
-      return el && 'value' in el ? String(el.value).trim() : '';
-    };
-
-    const nombre = getVal('nombre');
-    const apellido = getVal('apellido');
-    const cedula = getVal('cedula').replace(/\D/g, '');
-    const whatsapp = getVal('whatsapp');
-    const correo = getVal('correo');
-    const monto = Number(getVal('monto') || 0);
-    const tasa = Number(getVal('tasa') || 20);
-    const fechaEntrega = getVal('fecha_entrega') || new Date().toISOString().split('T')[0];
-    const metodoPago = getVal('metodo_pago') || 'USDT';
-    const notas = getVal('notas');
-    const interesEstimado = Number(((monto * tasa) / 100).toFixed(2));
-
-    return {
-      nombre,
-      apellido,
-      cedula,
-      whatsapp,
-      correo,
-      monto,
-      tasa,
-      interesEstimado,
-      fechaEntrega,
-      metodoPago,
-      notas,
-    };
-  }
-
-  function generarYMostrarContrato(prestamoId = 'BORRADOR') {
-    const d = obtenerDatosFormulario();
-
-    const html = renderizarContratoHtml({
-      prestamoId,
-      adminNombre: 'Administración',
-      clienteNombre: `${d.nombre} ${d.apellido}`.trim() || 'Cliente por definir',
-      clienteCedula: d.cedula || 'No registrada',
-      clienteWhatsapp: d.whatsapp || 'No registrado',
-      clienteCorreo: d.correo || 'No registrado',
-      garantiaNotas: d.notas || 'Sin garantía adicional registrada',
-      montoAcreditado: `$${d.monto.toFixed(2)}`,
-      capitalRestante: `$${d.monto.toFixed(2)}`,
-      interesCiclo: `$${d.interesEstimado.toFixed(2)} (${d.tasa}%)`,
-      modalidadPago: d.metodoPago,
-      fechaEmision: d.fechaEntrega,
-      fechaProximoPago: '7 días tras activación/entrega',
-    });
-
-    ultimoContratoHtml = html;
-
-    if (contratoPreview && contratoPanel) {
-      contratoPreview.innerHTML = html;
-      contratoPanel.style.display = 'block';
-      contratoPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }
-
-  function irAlDetalle() {
-    if (!prestamoCreadoId) return;
-    window.location.href = `/prestamos/${prestamoCreadoId}`;
-  }
-
-  btnLeerContrato?.addEventListener('click', () => {
-    if (errorBox) errorBox.style.display = 'none';
-    generarYMostrarContrato(prestamoCreadoId || 'BORRADOR');
-  });
-
-  btnCerrarContrato?.addEventListener('click', () => {
-    if (contratoPanel) contratoPanel.style.display = 'none';
-  });
-
-  btnIrDetalle?.addEventListener('click', () => {
-    irAlDetalle();
-  });
-
-  btnImprimir?.addEventListener('click', () => {
-    const htmlContenido = ultimoContratoHtml || contratoPreview?.innerHTML || '';
-    const ventanaImpresion = window.open('', '_blank', 'width=860,height=720');
-
-    if (!ventanaImpresion) {
-      window.print();
-      return;
-    }
-
-    ventanaImpresion.document.open();
-    ventanaImpresion.document.write(htmlContenido);
-    ventanaImpresion.document.close();
-    ventanaImpresion.focus();
-
-    ventanaImpresion.addEventListener('afterprint', () => {
-      ventanaImpresion.close();
-      if (prestamoCreadoId) {
-        irAlDetalle();
-      }
-    });
-
-    setTimeout(() => {
-      ventanaImpresion.print();
-    }, 250);
-  });
-
-  form?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (errorBox) errorBox.style.display = 'none';
-    if (infoBox) infoBox.style.display = 'none';
-
-    const d = obtenerDatosFormulario();
-
-    if (!d.nombre || !d.apellido || !d.cedula || !d.whatsapp || !d.monto || d.monto <= 0) {
-      mostrarError('Completa nombre, apellido, cédula numérica, WhatsApp y un monto mayor a 0.');
-      return;
-    }
-
-    if (btnCrear) {
-      btnCrear.textContent = 'Registrando crédito...';
-      btnCrear.setAttribute('disabled', 'true');
-    }
-
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) {
-        throw new Error('No hay sesión activa. Inicia sesión nuevamente.');
-      }
-
-      const res = await fetch('/api/prestamos/crear', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          nombre: d.nombre,
-          apellido: d.apellido,
-          cedula: Number(d.cedula),
-          whatsapp: d.whatsapp,
-          correo: d.correo || null,
-          monto: d.monto,
-          tasa: d.tasa,
-          fecha_entrega: d.fechaEntrega,
-          metodo_pago: d.metodoPago,
-          notas: d.notas || null,
-          estado: 'pendiente',
-        }),
-      });
-
-      const json = await res.json();
-      if (!res.ok || !json?.success || !json?.data?.prestamo_id) {
-        throw new Error(json?.error || `Error HTTP ${res.status}`);
-      }
-
-     prestamoCreadoId = String(json.data.prestamo_id);
-
-if (json.data.contrato_html) {
-  try {
-    sessionStorage.setItem(
-      `contrato_html_${prestamoCreadoId}`,
-      String(json.data.contrato_html)
-    );
-  } catch {
-    // Ignorar si sessionStorage no está disponible
-  }
-}
-
-window.location.href = `/prestamos/${prestamoCreadoId}`;
-
-      if (btnIrDetalle) {
-        btnIrDetalle.style.display = 'inline-block';
-      }
-
-      mostrarInfo(
-        `Crédito registrado en estado PENDIENTE (ID: ${prestamoCreadoId}). Revisa o imprime el contrato y luego ve al detalle del préstamo.`
-      );
-    } catch (err) {
-      mostrarError(err instanceof Error ? err.message : 'Error al registrar el crédito.');
-    } finally {
-      if (btnCrear) {
-        btnCrear.textContent = 'Crear Crédito en Estado Pendiente';
-        btnCrear.removeAttribute('disabled');
-      }
-    }
-  });
-</script>
-
-<style>
-  .card-container {
-    max-width: 860px;
-    margin: 0 auto;
-    padding: 1.5rem;
-  }
-  .header-row {
-    margin-bottom: 1.25rem;
-  }
-  .header-row h1 {
-    margin: 0 0 0.25rem 0;
-  }
-  .subtitle {
-    margin: 0;
-    color: #9ca3af;
-    font-size: 0.92rem;
-  }
-  .loan-form {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-  .grid-2 {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 1rem;
-  }
-  .grid-3 {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 1rem;
-  }
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }
-  .form-group label {
-    font-size: 0.875rem;
-    font-weight: 500;
-  }
-  .form-group input,
-  .form-group select {
-    padding: 0.6rem 0.75rem;
-    border-radius: 0.375rem;
-    border: 1px solid #374151;
-    background: #111827;
-    color: #f9fafb;
-  }
-  .acciones-formulario {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    margin-top: 0.5rem;
-  }
-  .contrato-panel {
-    margin-top: 1.75rem;
-    border: 1px solid #374151;
-    border-radius: 0.5rem;
-    padding: 1rem;
-    background: #ffffff;
-    color: #111827;
-  }
-  .contrato-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
-    flex-wrap: wrap;
-  }
-  .contrato-preview {
-    border: 1px solid #e5e7eb;
-    border-radius: 0.375rem;
-    padding: 0.5rem;
-    overflow-x: auto;
-  }
-  .btn-primary,
-  .btn-secondary {
-    padding: 0.65rem 1.05rem;
-    border-radius: 0.375rem;
-    font-weight: 600;
-    cursor: pointer;
-    border: none;
-  }
-  .btn-primary {
-    background: #10b981;
-    color: #06281e;
-  }
-  .btn-secondary {
-    background: #1f2937;
-    color: #f9fafb;
-  }
-  .alert-error {
-    padding: 0.75rem;
-    border-radius: 0.375rem;
-    background: rgba(239, 68, 68, 0.15);
-    border: 1px solid #ef4444;
-    color: #fca5a5;
-  }
-  .alert-info {
-    padding: 0.75rem;
-    border-radius: 0.375rem;
-    background: rgba(16, 185, 129, 0.15);
-    border: 1px solid #10b981;
-    color: #6ee7b7;
-  }
-</style>

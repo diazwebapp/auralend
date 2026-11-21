@@ -1,0 +1,836 @@
+---
+import LayoutAdmin from '../../../layouts/LayoutAdmin.astro';
+import { createClient } from '@supabase/supabase-js';
+
+const { id } = Astro.params;
+const token = Astro.cookies.get('sb-access-token')?.value;
+
+const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
+const supabaseKey = import.meta.env.PUBLIC_SUPABASE_KEY;
+
+let errorSSR: string | null = null;
+let cliente: any = null;
+let prestamosCliente: any[] = [];
+let movimientosPorPrestamo: Record<string, any[]> = {};
+
+const esUuid = (valor: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(valor);
+
+if (!id) {
+  errorSSR = 'Falta el identificador o cédula del cliente en la URL.';
+} else if (!token) {
+  errorSSR = 'No se encontró la cookie sb-access-token en el servidor.';
+} else {
+  const supabaseServer = createClient(supabaseUrl, supabaseKey, {
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    auth: { persistSession: false },
+  });
+
+  const { data: { user }, error: userError } = await supabaseServer.auth.getUser(token);
+
+  if (userError || !user) {
+    errorSSR = `Sesión inválida en SSR: ${userError?.message || 'usuario no encontrado'}.`;
+  } else {
+    let cData: any = null;
+    let cError: any = null;
+
+    if (esUuid(id)) {
+      const resById = await supabaseServer
+        .from('clientes')
+        .select('*')
+        .eq('id', id)
+        .single();
+      cData = resById.data;
+      cError = resById.error;
+    }
+
+    if (!cData) {
+      const cedulaDigitos = id.replace(/[^0-9]/g, '');
+      const filtroCedula = cedulaDigitos ? Number(cedulaDigitos) : id;
+
+      const resByCedula = await supabaseServer
+        .from('clientes')
+        .select('*')
+        .eq('cedula', filtroCedula)
+        .limit(1)
+        .maybeSingle();
+
+      if (resByCedula.data) {
+        cData = resByCedula.data;
+        cError = null;
+      } else if (!cError) {
+        cError = resByCedula.error || { message: 'Cliente no encontrado' };
+      }
+    }
+
+    if (cError || !cData) {
+      errorSSR = `No se pudo encontrar el cliente (${id}): ${cError?.message || 'sin datos'}.`;
+    } else {
+      cliente = cData;
+
+      const { data: pData, error: pError } = await supabaseServer
+        .from('prestamos')
+        .select('*')
+        .eq('cliente_id', cliente.id)
+        .order('creado_en', { ascending: false });
+
+      if (pError) {
+        errorSSR = `Error al cargar los préstamos del cliente: ${pError.message}`;
+      } else {
+        prestamosCliente = pData ?? [];
+
+        const idsPrestamos = prestamosCliente.map((p) => p.id);
+        if (idsPrestamos.length > 0) {
+          const { data: mData } = await supabaseServer
+            .from('movimientos')
+            .select('id, prestamo_id, tipo_movimiento, monto_total, aplicado_a_interes, aplicado_a_capital, creado_en')
+            .in('prestamo_id', idsPrestamos)
+            .order('creado_en', { ascending: false });
+
+          for (const mov of mData ?? []) {
+            if (!movimientosPorPrestamo[mov.prestamo_id]) {
+              movimientosPorPrestamo[mov.prestamo_id] = [];
+            }
+            movimientosPorPrestamo[mov.prestamo_id].push(mov);
+          }
+        }
+      }
+    }
+  }
+}
+
+const prestamosEnriquecidos = prestamosCliente.map((p) => {
+  const movs = movimientosPorPrestamo[p.id] || [];
+  const totalRecargosHist = movs
+    .filter((m) => String(m.tipo_movimiento).toUpperCase() === 'RECARGO')
+    .reduce((acc, m) => acc + Number(m.monto_total || 0), 0);
+  const totalPagadoInteres = movs
+    .filter((m) => String(m.tipo_movimiento).toUpperCase().startsWith('PAGO'))
+    .reduce((acc, m) => acc + Number(m.aplicado_a_interes || 0), 0);
+  const recargoPendiente = Math.max(0, Number((totalRecargosHist - totalPagadoInteres).toFixed(2)));
+  const tienePagosORecargos = movs.some((m) => {
+    const t = String(m.tipo_movimiento).toUpperCase();
+    return t.startsWith('PAGO') || t === 'RECARGO';
+  });
+
+  return {
+    ...p,
+    recargoPendiente,
+    tienePagosORecargos,
+  };
+});
+
+const capitalTotalActivo = prestamosEnriquecidos
+  .filter((p) => String(p.estado) !== 'pagado')
+  .reduce((acc, p) => acc + Number(p.capital_restante || 0), 0);
+
+const interesTotalPendiente = prestamosEnriquecidos
+  .filter((p) => String(p.estado) !== 'pagado')
+  .reduce((acc, p) => acc + Number(p.interes_pendiente_ciclo || 0), 0);
+
+const recargoTotalPendiente = prestamosEnriquecidos
+  .filter((p) => String(p.estado) !== 'pagado')
+  .reduce((acc, p) => acc + Number(p.recargoPendiente || 0), 0);
+
+const creditosEnMora = prestamosEnriquecidos.filter((p) => String(p.estado) === 'en_mora').length;
+const whatsappClean = cliente?.whatsapp ? String(cliente.whatsapp).replace(/[^0-9]/g, '') : '';
+const fechaHoyIso = new Date().toISOString().split('T')[0];
+const fechaCorteDefaultIso = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+---
+
+<LayoutAdmin title={cliente ? `${cliente.nombre} ${cliente.apellido} - Cliente` : 'Cliente - Auralend'}>
+  <div
+    id="cliente-app"
+    class="cliente-wrapper"
+    data-cliente-id={cliente?.id || ''}
+  >
+    <div class="cliente-header">
+      <div class="header-top-row">
+        <a href="/" class="back-link">&larr; Volver a la cartera</a>
+        <div class="header-actions">
+          <a href="/busqueda" class="btn-ghost">Buscar</a>
+          {!errorSSR && cliente && (
+            <button type="button" id="btn-toggle-nuevo-prestamo" class="btn-primary">
+              + Nuevo préstamo
+            </button>
+          )}
+        </div>
+      </div>
+
+      {!errorSSR && cliente && (
+        <div class="title-row">
+          <div>
+            <h1>{cliente.nombre} {cliente.apellido}</h1>
+            <p class="subtitulo-cedula">
+              Cédula: <strong>{cliente.cedula ?? 'No registrada'}</strong> ·
+              Créditos registrados: <strong>{prestamosEnriquecidos.length}</strong>
+            </p>
+          </div>
+          {creditosEnMora > 0 && (
+            <span class="badge-alerta-mora">⚠️ {creditosEnMora} en mora</span>
+          )}
+        </div>
+      )}
+    </div>
+
+    {errorSSR ? (
+      <div class="panel-oscuro alert-error">
+        <strong>Error:</strong> {errorSSR}
+      </div>
+    ) : (
+      <div class="space-y-4">
+        <div class="panel-oscuro">
+          <h3>Resumen del Cliente</h3>
+          <div class="stats-grid">
+            <div class="stat-box">
+              <span class="label">Capital Activo</span>
+              <span class="stat-green">${capitalTotalActivo.toFixed(2)}</span>
+            </div>
+            <div class="stat-box">
+              <span class="label">Interés del Ciclo</span>
+              <span class="stat-yellow">${interesTotalPendiente.toFixed(2)}</span>
+            </div>
+            <div class="stat-box">
+              <span class="label">Recargos Pendientes</span>
+              <span class={recargoTotalPendiente > 0 ? 'stat-red' : 'valor-muted'}>
+                ${recargoTotalPendiente.toFixed(2)}
+              </span>
+            </div>
+            <div class="stat-box">
+              <span class="label">Créditos en Mora</span>
+              <span class={creditosEnMora > 0 ? 'stat-red' : 'valor-claro'}>
+                {creditosEnMora}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-oscuro">
+          <h3>Datos de Contacto</h3>
+          <div class="info-grid">
+            <div>
+              <span class="label">Cédula</span>
+              <strong class="valor-claro">{cliente.cedula ?? '—'}</strong>
+            </div>
+            <div>
+              <span class="label">WhatsApp</span>
+              {whatsappClean ? (
+                <a
+                  href={`https://wa.me/${whatsappClean}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="whatsapp-link"
+                >
+                  📱 {cliente.whatsapp}
+                </a>
+              ) : (
+                <span class="valor-muted">No registrado</span>
+              )}
+            </div>
+            <div>
+              <span class="label">Correo</span>
+              <span class="valor-muted">{cliente.correo || 'No registrado'}</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="panel-nuevo-prestamo" class="panel-oscuro form-panel" style="display: none;">
+          <div class="panel-head-flex">
+            <h3>Emitir Nuevo Préstamo para {cliente.nombre}</h3>
+            <button type="button" id="btn-cerrar-nuevo-prestamo" class="btn-secondary-sm">
+              Cerrar
+            </button>
+          </div>
+
+          <form id="form-nuevo-prestamo" class="form-grid">
+            <div class="form-group">
+              <label for="np-monto">Monto a Acreditar (USDT / USD) *</label>
+              <input type="number" id="np-monto" step="0.01" min="0.01" required placeholder="Ej. 150.00" />
+            </div>
+
+            <div class="form-group">
+              <label for="np-tasa">Tasa de Interés por Ciclo (%) *</label>
+              <input type="number" id="np-tasa" step="0.01" min="0" value="20" required />
+            </div>
+
+            <div class="form-group">
+              <label for="np-fecha-entrega">Fecha de Entrega *</label>
+              <input type="date" id="np-fecha-entrega" value={fechaHoyIso} required />
+            </div>
+
+            <div class="form-group">
+              <label for="np-fecha-pago">Fecha Próximo Pago / Corte *</label>
+              <input type="date" id="np-fecha-pago" value={fechaCorteDefaultIso} required />
+            </div>
+
+            <div class="form-group">
+              <label for="np-estado">Estado Inicial</label>
+              <select id="np-estado">
+                <option value="activo" selected>activo</option>
+                <option value="pendiente">pendiente</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="np-metodo">Método de Desembolso</label>
+              <input type="text" id="np-metodo" value="USDT - Binance Pay" />
+            </div>
+
+            <div id="np-error" class="alert-error col-span-2" style="display: none;"></div>
+            <div id="np-ok" class="alert-ok col-span-2" style="display: none;"></div>
+
+            <div class="col-span-2 form-actions-end">
+              <button type="submit" id="btn-crear-prestamo" class="btn-primary">
+                Crear Préstamo
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div class="panel-oscuro">
+          <div class="panel-head-flex">
+            <h3>Créditos del Cliente ({prestamosEnriquecidos.length})</h3>
+          </div>
+
+          {prestamosEnriquecidos.length > 0 ? (
+            <div class="prestamos-list">
+              {prestamosEnriquecidos.map((p) => {
+                const estado = String(p.estado || 'pendiente');
+                return (
+                  <div class={`prestamo-item estado-${estado}`}>
+                    <div class="prestamo-top">
+                      <div>
+                        <span class="prestamo-id">ID: {p.id}</span>
+                        <span class={`badge-estado badge-${estado}`}>{estado.toUpperCase()}</span>
+                      </div>
+                      <div class="prestamo-acciones">
+                        <a href={`/prestamos/${p.id}`} class="btn-gestionar">
+                          Gestionar / Abonar &rarr;
+                        </a>
+                        <button
+                          type="button"
+                          class="btn-eliminar"
+                          data-prestamo-id={p.id}
+                          data-bloqueado={p.tienePagosORecargos ? '1' : '0'}
+                          title={
+                            p.tienePagosORecargos
+                              ? 'Tiene pagos o recargos registrados'
+                              : 'Eliminar préstamo sin pagos/recargos'
+                          }
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="prestamo-metricas">
+                      <div>
+                        <span class="label">Acreditado</span>
+                        <strong>${Number(p.monto_acreditado || 0).toFixed(2)}</strong>
+                      </div>
+                      <div>
+                        <span class="label">Capital Restante</span>
+                        <strong class="stat-green">${Number(p.capital_restante || 0).toFixed(2)}</strong>
+                      </div>
+                      <div>
+                        <span class="label">Interés Ciclo</span>
+                        <strong class="stat-yellow">${Number(p.interes_pendiente_ciclo || 0).toFixed(2)}</strong>
+                      </div>
+                      <div>
+                        <span class="label">Recargo Pendiente</span>
+                        <strong class={p.recargoPendiente > 0 ? 'stat-red' : 'valor-muted'}>
+                          ${Number(p.recargoPendiente || 0).toFixed(2)}
+                        </strong>
+                      </div>
+                      <div>
+                        <span class="label">Próximo Corte</span>
+                        <strong>
+                          {p.fecha_proximo_pago
+                            ? new Date(p.fecha_proximo_pago).toLocaleDateString('es-ES')
+                            : '—'}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p class="valor-muted">Este cliente aún no tiene préstamos registrados.</p>
+          )}
+        </div>
+      </div>
+    )}
+  </div>
+
+  <script>
+    import { supabase } from '../../../lib/supabase';
+
+    const rootEl = document.getElementById('cliente-app');
+    const clienteId = rootEl?.dataset.clienteId || '';
+
+    const btnToggleNuevo = document.getElementById('btn-toggle-nuevo-prestamo');
+    const btnCerrarNuevo = document.getElementById('btn-cerrar-nuevo-prestamo');
+    const panelNuevo = document.getElementById('panel-nuevo-prestamo');
+    const formNuevoPrestamo = document.getElementById('form-nuevo-prestamo');
+    const btnCrearPrestamo = document.getElementById('btn-crear-prestamo');
+    const npError = document.getElementById('np-error');
+    const npOk = document.getElementById('np-ok');
+
+    btnToggleNuevo?.addEventListener('click', () => {
+      if (!panelNuevo) return;
+      const visible = panelNuevo.style.display !== 'none';
+      panelNuevo.style.display = visible ? 'none' : 'block';
+    });
+
+    btnCerrarNuevo?.addEventListener('click', () => {
+      if (panelNuevo) panelNuevo.style.display = 'none';
+    });
+
+    formNuevoPrestamo?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (npError) npError.style.display = 'none';
+      if (npOk) npOk.style.display = 'none';
+
+      if (!clienteId) {
+        if (npError) {
+          npError.textContent = 'No se encontró el ID del cliente.';
+          npError.style.display = 'block';
+        }
+        return;
+      }
+
+      const montoEl = document.getElementById('np-monto');
+      const tasaEl = document.getElementById('np-tasa');
+      const entregaEl = document.getElementById('np-fecha-entrega');
+      const corteEl = document.getElementById('np-fecha-pago');
+      const estadoEl = document.getElementById('np-estado');
+      const metodoEl = document.getElementById('np-metodo');
+
+      const monto = parseFloat(
+        montoEl && 'value' in montoEl ? String(montoEl.value).replace(',', '.') : '0'
+      );
+      const tasa = parseFloat(
+        tasaEl && 'value' in tasaEl ? String(tasaEl.value).replace(',', '.') : '20'
+      );
+      const fechaEntrega = entregaEl && 'value' in entregaEl ? String(entregaEl.value) : '';
+      const fechaProximoPago = corteEl && 'value' in corteEl ? String(corteEl.value) : '';
+      const estado = estadoEl && 'value' in estadoEl ? String(estadoEl.value) : 'activo';
+      const metodo = metodoEl && 'value' in metodoEl ? String(metodoEl.value) : 'USDT - Binance Pay';
+
+      if (!Number.isFinite(monto) || monto <= 0) {
+        if (npError) {
+          npError.textContent = 'Ingresa un monto válido mayor a 0.';
+          npError.style.display = 'block';
+        }
+        return;
+      }
+
+      if (btnCrearPrestamo) {
+        btnCrearPrestamo.textContent = 'Creando...';
+        btnCrearPrestamo.setAttribute('disabled', 'true');
+      }
+
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) {
+          throw new Error('No hay sesión activa.');
+        }
+
+        const res = await fetch('/api/prestamos/crear', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            cliente_id: clienteId,
+            monto,
+            tasa: Number.isFinite(tasa) ? tasa : 20,
+            fecha_entrega: fechaEntrega || new Date().toISOString().split('T')[0],
+            fecha_proximo_pago: fechaProximoPago || null,
+            estado,
+            metodo_pago: metodo || 'USDT - Binance Pay',
+          }),
+        });
+
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.error || 'No se pudo crear el préstamo.');
+        }
+
+        if (npOk) {
+          npOk.textContent = 'Préstamo creado correctamente. Actualizando vista...';
+          npOk.style.display = 'block';
+        }
+
+        window.location.reload();
+      } catch (err) {
+        if (npError) {
+          npError.textContent =
+            err instanceof Error ? err.message : 'Ocurrió un error al crear el préstamo.';
+          npError.style.display = 'block';
+        }
+      } finally {
+        if (btnCrearPrestamo) {
+          btnCrearPrestamo.textContent = 'Crear Préstamo';
+          btnCrearPrestamo.removeAttribute('disabled');
+        }
+      }
+    });
+
+    document.addEventListener('click', async (e) => {
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+
+      const btn = target.closest('.btn-eliminar');
+      if (!(btn instanceof HTMLElement)) return;
+
+      const prestamoId = btn.dataset.prestamoId;
+      const bloqueado = btn.dataset.bloqueado === '1';
+      if (!prestamoId) return;
+
+      if (bloqueado) {
+        alert(
+          'Este préstamo ya tiene pagos o recargos registrados. Para mantener la integridad contable no se recomienda eliminarlo directamente.'
+        );
+        return;
+      }
+
+      const confirmar = confirm(
+        '¿Seguro que deseas eliminar este préstamo y sus registros asociados? Esta acción no se puede deshacer.'
+      );
+      if (!confirmar) return;
+
+      btn.textContent = 'Eliminando...';
+      btn.setAttribute('disabled', 'true');
+
+      try {
+        await supabase.from('documentos_prestamo').delete().eq('prestamo_id', prestamoId);
+        await supabase.from('movimientos').delete().eq('prestamo_id', prestamoId);
+        const { error: delError } = await supabase
+          .from('prestamos')
+          .delete()
+          .eq('id', prestamoId);
+
+        if (delError) {
+          throw new Error(delError.message);
+        }
+
+        window.location.reload();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'No se pudo eliminar el préstamo.');
+        btn.textContent = 'Eliminar';
+        btn.removeAttribute('disabled');
+      }
+    });
+  </script>
+
+  <style>
+    .cliente-wrapper {
+      max-width: 880px;
+      margin: 0 auto;
+      color: #f9fafb;
+    }
+    .cliente-header {
+      margin-bottom: 1.25rem;
+    }
+    .header-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .header-actions {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-top: 0.6rem;
+    }
+    .title-row h1 {
+      margin: 0;
+      font-size: 1.45rem;
+      color: #ffffff;
+    }
+    .subtitulo-cedula {
+      margin: 0.2rem 0 0 0;
+      font-size: 0.85rem;
+      color: #9ca3af;
+    }
+    .badge-alerta-mora {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid #ef4444;
+      color: #fca5a5;
+      padding: 0.3rem 0.7rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+    .back-link {
+      font-size: 0.82rem;
+      color: #34d399;
+      text-decoration: none;
+    }
+    .btn-ghost {
+      background: #1f2937;
+      color: #e5e7eb;
+      border: 1px solid #374151;
+      padding: 0.45rem 0.8rem;
+      border-radius: 0.375rem;
+      font-size: 0.82rem;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .btn-primary {
+      background: #10b981;
+      color: #06281e;
+      border: none;
+      padding: 0.5rem 0.9rem;
+      border-radius: 0.375rem;
+      font-weight: 700;
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+    .btn-secondary-sm {
+      background: #1f2937;
+      color: #f9fafb;
+      border: 1px solid #374151;
+      padding: 0.35rem 0.7rem;
+      border-radius: 0.375rem;
+      font-size: 0.78rem;
+      cursor: pointer;
+    }
+    .space-y-4 > * + * {
+      margin-top: 1rem;
+    }
+    .panel-oscuro {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 0.65rem;
+      padding: 1.15rem;
+    }
+    .panel-oscuro h3 {
+      margin: 0 0 0.9rem 0;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #9ca3af;
+      border-bottom: 1px solid #1f2937;
+      padding-bottom: 0.5rem;
+    }
+    .panel-head-flex {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .panel-head-flex h3 {
+      margin: 0;
+      border: none;
+      padding: 0;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.85rem;
+    }
+    @media (min-width: 768px) {
+      .stats-grid {
+        grid-template-columns: repeat(4, 1fr);
+      }
+    }
+    .stat-box {
+      background: #0b1120;
+      border: 1px solid #1f2937;
+      border-radius: 0.5rem;
+      padding: 0.75rem;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.9rem;
+    }
+    @media (min-width: 640px) {
+      .info-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+    .label {
+      display: block;
+      font-size: 0.72rem;
+      color: #9ca3af;
+      text-transform: uppercase;
+      margin-bottom: 0.25rem;
+    }
+    .valor-claro {
+      color: #f9fafb;
+    }
+    .valor-muted {
+      color: #9ca3af;
+    }
+    .whatsapp-link {
+      color: #34d399;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .stat-green {
+      color: #34d399;
+      font-weight: 700;
+      font-size: 1.08rem;
+    }
+    .stat-yellow {
+      color: #fbbf24;
+      font-weight: 700;
+      font-size: 1.08rem;
+    }
+    .stat-red {
+      color: #f87171;
+      font-weight: 700;
+      font-size: 1.08rem;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.9rem;
+    }
+    @media (min-width: 640px) {
+      .form-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .col-span-2 {
+        grid-column: span 2;
+      }
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+    .form-group label {
+      font-size: 0.78rem;
+      color: #d1d5db;
+    }
+    .form-group input,
+    .form-group select {
+      background: #0b1120;
+      color: #f9fafb;
+      border: 1px solid #374151;
+      border-radius: 0.375rem;
+      padding: 0.5rem 0.7rem;
+    }
+    .form-actions-end {
+      display: flex;
+      justify-content: flex-end;
+    }
+    .prestamos-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+    .prestamo-item {
+      background: #0b1120;
+      border: 1px solid #1f2937;
+      border-left: 4px solid #34d399;
+      border-radius: 0.5rem;
+      padding: 0.9rem;
+    }
+    .prestamo-item.estado-en_mora,
+    .prestamo-item.estado-vencido {
+      border-left-color: #f87171;
+    }
+    .prestamo-item.estado-pendiente {
+      border-left-color: #fbbf24;
+    }
+    .prestamo-item.estado-pagado {
+      border-left-color: #6b7280;
+    }
+    .prestamo-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.75rem;
+    }
+    .prestamo-id {
+      font-size: 0.76rem;
+      color: #9ca3af;
+      margin-right: 0.5rem;
+      font-family: monospace;
+    }
+    .badge-estado {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      background: #1f2937;
+      color: #f9fafb;
+    }
+    .prestamo-acciones {
+      display: flex;
+      gap: 0.45rem;
+      align-items: center;
+    }
+    .btn-gestionar {
+      background: rgba(16, 185, 129, 0.14);
+      border: 1px solid #10b981;
+      color: #34d399;
+      text-decoration: none;
+      padding: 0.35rem 0.65rem;
+      border-radius: 0.375rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .btn-eliminar {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.5);
+      color: #fca5a5;
+      padding: 0.35rem 0.65rem;
+      border-radius: 0.375rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .prestamo-metricas {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.65rem;
+    }
+    @media (min-width: 640px) {
+      .prestamo-metricas {
+        grid-template-columns: repeat(5, 1fr);
+      }
+    }
+    .alert-error {
+      background-color: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.45);
+      color: #fca5a5;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      font-size: 0.82rem;
+    }
+    .alert-ok {
+      background-color: rgba(16, 185, 129, 0.14);
+      border: 1px solid #10b981;
+      color: #6ee7b7;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      font-size: 0.82rem;
+    }
+  </style>
+</LayoutAdmin>

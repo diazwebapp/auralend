@@ -1,0 +1,627 @@
+---
+import LayoutAdmin from '../layouts/LayoutAdmin.astro';
+import { createClient } from '@supabase/supabase-js';
+
+const token = Astro.cookies.get('sb-access-token')?.value;
+const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
+const supabaseKey = import.meta.env.PUBLIC_SUPABASE_KEY;
+
+let errorSSR: string | null = null;
+let clientesData: any[] = [];
+let prestamosData: any[] = [];
+let movimientosData: any[] = [];
+
+if (!token) {
+  errorSSR = 'No se encontró la cookie sb-access-token en el servidor.';
+} else {
+  const supabaseServer = createClient(supabaseUrl, supabaseKey, {
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    auth: { persistSession: false },
+  });
+
+  const { data: { user }, error: userError } = await supabaseServer.auth.getUser(token);
+
+  if (userError || !user) {
+    errorSSR = `Sesión inválida en SSR: ${userError?.message || 'usuario no encontrado'}.`;
+  } else {
+    const [resClientes, resPrestamos, resMovimientos] = await Promise.all([
+      supabaseServer
+        .from('clientes')
+        .select('id, nombre, apellido, cedula, whatsapp, correo')
+        .order('creado_en', { ascending: false })
+        .limit(500),
+      supabaseServer
+        .from('prestamos')
+        .select('id, cliente_id, monto_acreditado, capital_restante, interes_pendiente_ciclo, fecha_proximo_pago, estado, creado_en')
+        .order('creado_en', { ascending: false })
+        .limit(500),
+      supabaseServer
+        .from('movimientos')
+        .select('id, prestamo_id, tipo_movimiento, monto_total, aplicado_a_interes, aplicado_a_capital, capital_resultante_despues_del_movimiento, metodo_pago, creado_en')
+        .order('creado_en', { ascending: false })
+        .limit(800),
+    ]);
+
+    if (resClientes.error || resPrestamos.error || resMovimientos.error) {
+      errorSSR =
+        resClientes.error?.message ||
+        resPrestamos.error?.message ||
+        resMovimientos.error?.message ||
+        'Error al cargar datos para búsqueda.';
+    } else {
+      clientesData = resClientes.data ?? [];
+      prestamosData = resPrestamos.data ?? [];
+      movimientosData = resMovimientos.data ?? [];
+    }
+  }
+}
+
+const payloadInicial = JSON.stringify({
+  clientes: clientesData,
+  prestamos: prestamosData,
+  movimientos: movimientosData,
+});
+---
+
+<LayoutAdmin title="Buscador - Auralend">
+  <div
+    id="busqueda-app"
+    class="busqueda-wrapper"
+    data-payload={encodeURIComponent(payloadInicial)}
+  >
+    <div class="search-topbar">
+      <a href="/" class="btn-volver" aria-label="Volver">&larr;</a>
+
+      <div class="search-input-box">
+        <span class="search-icon" aria-hidden="true">🔍</span>
+        <input
+          type="search"
+          id="input-busqueda"
+          class="search-input"
+          placeholder="Buscar por nombre, cédula, ID, monto o método..."
+          autocomplete="off"
+          autofocus
+        />
+        <button type="button" id="btn-limpiar-busqueda" class="btn-limpiar" style="display: none;" aria-label="Limpiar">
+          &times;
+        </button>
+      </div>
+
+      <a href="/" class="btn-cancelar">Cancelar</a>
+    </div>
+
+    <div class="filtros-row">
+      <label class="checkbox-pill">
+        <input type="checkbox" id="chk-prestamos" />
+        <span>Buscar en préstamos</span>
+      </label>
+
+      <label class="checkbox-pill">
+        <input type="checkbox" id="chk-movimientos" />
+        <span>Buscar en movimientos</span>
+      </label>
+
+      <span id="contador-resultados" class="contador-resultados">0 resultados</span>
+    </div>
+
+    {errorSSR ? (
+      <div class="alert-error">
+        <strong>Error:</strong> {errorSSR}
+      </div>
+    ) : (
+      <div id="resultados-container" class="resultados-lista">
+        <p class="estado-vacio">
+          Escribe un nombre, cédula, ID o monto para buscar en tiempo real. Si no marcas los filtros, busca en clientes, préstamos y movimientos.
+        </p>
+      </div>
+    )}
+  </div>
+
+  <script>
+    const rootEl = document.getElementById('busqueda-app');
+    const rawEncoded = rootEl?.dataset.payload || '';
+
+    let clientes: any[] = [];
+    let prestamos: any[] = [];
+    let movimientos: any[] = [];
+
+    try {
+      const parsed = JSON.parse(decodeURIComponent(rawEncoded));
+      clientes = Array.isArray(parsed.clientes) ? parsed.clientes : [];
+      prestamos = Array.isArray(parsed.prestamos) ? parsed.prestamos : [];
+      movimientos = Array.isArray(parsed.movimientos) ? parsed.movimientos : [];
+    } catch {
+      // Sin datos iniciales
+    }
+
+    const clienteMap = new Map<string, any>();
+    for (const c of clientes) {
+      clienteMap.set(String(c.id), c);
+    }
+
+    const prestamoMap = new Map<string, any>();
+    for (const p of prestamos) {
+      prestamoMap.set(String(p.id), p);
+    }
+
+    const inputEl = document.getElementById('input-busqueda') as HTMLInputElement | null;
+    const btnLimpiar = document.getElementById('btn-limpiar-busqueda') as HTMLButtonElement | null;
+    const chkPrestamos = document.getElementById('chk-prestamos') as HTMLInputElement | null;
+    const chkMovimientos = document.getElementById('chk-movimientos') as HTMLInputElement | null;
+    const resultadosEl = document.getElementById('resultados-container');
+    const contadorEl = document.getElementById('contador-resultados');
+
+    function normalizar(texto: unknown): string {
+      return String(texto ?? '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+    }
+
+    function escaparHtml(texto: unknown): string {
+      return String(texto ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function formatoFecha(valor: unknown): string {
+      if (!valor) return '—';
+      const d = new Date(String(valor));
+      return Number.isNaN(d.getTime()) ? String(valor) : d.toLocaleDateString('es-ES');
+    }
+
+    function renderResultados() {
+      if (!resultadosEl) return;
+
+      const queryRaw = inputEl?.value || '';
+      const q = normalizar(queryRaw);
+      const soloPrestamos = Boolean(chkPrestamos?.checked);
+      const soloMovimientos = Boolean(chkMovimientos?.checked);
+      const hayFiltroEspecifico = soloPrestamos || soloMovimientos;
+
+      if (btnLimpiar) {
+        btnLimpiar.style.display = queryRaw.length > 0 ? 'inline-flex' : 'none';
+      }
+
+      if (!q && !hayFiltroEspecifico) {
+        if (contadorEl) contadorEl.textContent = '0 resultados';
+        resultadosEl.innerHTML = `
+          <p class="estado-vacio">
+            Escribe un nombre, cédula, ID, monto o método para buscar en vivo.
+          </p>
+        `;
+        return;
+      }
+
+      const mostrarClientes = !hayFiltroEspecifico;
+      const mostrarPrestamos = !hayFiltroEspecifico || soloPrestamos;
+      const mostrarMovimientos = !hayFiltroEspecifico || soloMovimientos;
+
+      const clientesMatched: any[] = [];
+      const prestamosMatched: any[] = [];
+      const movimientosMatched: any[] = [];
+
+      if (mostrarClientes && q) {
+        for (const c of clientes) {
+          const nombreCompleto = normalizar(`${c.nombre || ''} ${c.apellido || ''}`);
+          const cedula = normalizar(c.cedula);
+          const whatsapp = normalizar(c.whatsapp);
+          const idStr = normalizar(c.id);
+
+          if (
+            nombreCompleto.includes(q) ||
+            cedula.includes(q) ||
+            whatsapp.includes(q) ||
+            idStr.includes(q)
+          ) {
+            clientesMatched.push(c);
+          }
+        }
+      }
+
+      if (mostrarPrestamos) {
+        for (const p of prestamos) {
+          const c = clienteMap.get(String(p.cliente_id));
+          const nombreCliente = normalizar(`${c?.nombre || ''} ${c?.apellido || ''}`);
+          const cedulaCliente = normalizar(c?.cedula);
+          const idPrestamo = normalizar(p.id);
+          const estado = normalizar(p.estado);
+          const capital = normalizar(p.capital_restante);
+          const monto = normalizar(p.monto_acreditado);
+
+          const coincide =
+            !q ||
+            idPrestamo.includes(q) ||
+            nombreCliente.includes(q) ||
+            cedulaCliente.includes(q) ||
+            estado.includes(q) ||
+            capital.includes(q) ||
+            monto.includes(q);
+
+          if (coincide) {
+            prestamosMatched.push({ prestamo: p, cliente: c });
+          }
+        }
+      }
+
+      if (mostrarMovimientos) {
+        for (const m of movimientos) {
+          const p = prestamoMap.get(String(m.prestamo_id));
+          const c = p ? clienteMap.get(String(p.cliente_id)) : null;
+
+          const idMov = normalizar(m.id);
+          const idPrestamo = normalizar(m.prestamo_id);
+          const tipo = normalizar(m.tipo_movimiento);
+          const metodo = normalizar(m.metodo_pago);
+          const monto = normalizar(m.monto_total);
+          const nombreCliente = normalizar(`${c?.nombre || ''} ${c?.apellido || ''}`);
+          const cedulaCliente = normalizar(c?.cedula);
+
+          const coincide =
+            !q ||
+            idMov.includes(q) ||
+            idPrestamo.includes(q) ||
+            tipo.includes(q) ||
+            metodo.includes(q) ||
+            monto.includes(q) ||
+            nombreCliente.includes(q) ||
+            cedulaCliente.includes(q);
+
+          if (coincide) {
+            movimientosMatched.push({ movimiento: m, prestamo: p, cliente: c });
+          }
+        }
+      }
+
+      const totalCount =
+        clientesMatched.length + prestamosMatched.length + movimientosMatched.length;
+      if (contadorEl) {
+        contadorEl.textContent = `${totalCount} resultado${totalCount === 1 ? '' : 's'}`;
+      }
+
+      if (totalCount === 0) {
+        resultadosEl.innerHTML = `
+          <p class="estado-vacio">
+            No se encontraron coincidencias para "<strong>${escaparHtml(queryRaw)}</strong>".
+          </p>
+        `;
+        return;
+      }
+
+      let html = '';
+
+      if (clientesMatched.length > 0) {
+        html += `<div class="grupo-titulo">Clientes (${clientesMatched.length})</div>`;
+        for (const c of clientesMatched.slice(0, 20)) {
+          const nombre = escaparHtml(`${c.nombre || ''} ${c.apellido || ''}`.trim() || 'Cliente');
+          const cedula = escaparHtml(c.cedula || 'Sin cédula');
+          const rutaCliente = `/clientes/${encodeURIComponent(String(c.id))}`;
+          const rutaCedula = c.cedula ? `/clientes/${encodeURIComponent(String(c.cedula))}` : rutaCliente;
+
+          html += `
+            <a href="${rutaCliente}" class="resultado-card tipo-cliente">
+              <div class="card-top">
+                <span class="badge-tipo badge-cliente">CLIENTE</span>
+                <span class="card-ruta">${escaparHtml(rutaCedula)}</span>
+              </div>
+              <div class="card-titulo">${nombre}</div>
+              <div class="card-meta">
+                <span>Cédula: <strong>${cedula}</strong></span>
+                <span>WhatsApp: ${escaparHtml(c.whatsapp || '—')}</span>
+              </div>
+            </a>
+          `;
+        }
+      }
+
+      if (prestamosMatched.length > 0) {
+        html += `<div class="grupo-titulo">Préstamos (${prestamosMatched.length})</div>`;
+        for (const item of prestamosMatched.slice(0, 25)) {
+          const p = item.prestamo;
+          const c = item.cliente;
+          const nombreCliente = escaparHtml(`${c?.nombre || ''} ${c?.apellido || ''}`.trim() || 'Cliente');
+          const cedula = escaparHtml(c?.cedula || '—');
+          const estado = escaparHtml(String(p.estado || 'activo').toUpperCase());
+          const capital = Number(p.capital_restante || 0).toFixed(2);
+          const interes = Number(p.interes_pendiente_ciclo || 0).toFixed(2);
+          const rutaPrestamo = `/prestamos/${encodeURIComponent(String(p.id))}`;
+
+          html += `
+            <a href="${rutaPrestamo}" class="resultado-card tipo-prestamo">
+              <div class="card-top">
+                <span class="badge-tipo badge-prestamo">PRÉSTAMO · ${estado}</span>
+                <span class="card-ruta">${escaparHtml(rutaPrestamo)}</span>
+              </div>
+              <div class="card-titulo">${nombreCliente} (C.I. ${cedula})</div>
+              <div class="card-meta">
+                <span>Capital: <strong class="txt-verde">$${capital}</strong></span>
+                <span>Interés ciclo: <strong class="txt-amarillo">$${interes}</strong></span>
+                <span>Corte: ${escaparHtml(formatoFecha(p.fecha_proximo_pago))}</span>
+              </div>
+              <div class="card-id">ID Préstamo: ${escaparHtml(p.id)}</div>
+            </a>
+          `;
+        }
+      }
+
+      if (movimientosMatched.length > 0) {
+        html += `<div class="grupo-titulo">Movimientos (${movimientosMatched.length})</div>`;
+        for (const item of movimientosMatched.slice(0, 30)) {
+          const m = item.movimiento;
+          const c = item.cliente;
+          const nombreCliente = escaparHtml(`${c?.nombre || ''} ${c?.apellido || ''}`.trim() || 'Cliente');
+          const tipo = escaparHtml(String(m.tipo_movimiento || 'MOVIMIENTO'));
+          const monto = Number(m.monto_total || 0).toFixed(2);
+          const aInteres = Number(m.aplicado_a_interes || 0).toFixed(2);
+          const aCapital = Number(m.aplicado_a_capital || 0).toFixed(2);
+          const metodo = escaparHtml(m.metodo_pago || 'N/A');
+          const rutaPrestamo = `/prestamos/${encodeURIComponent(String(m.prestamo_id))}`;
+          const rutaCliente = c?.id ? `/clientes/${encodeURIComponent(String(c.id))}` : null;
+
+          html += `
+            <div class="resultado-card tipo-movimiento">
+              <div class="card-top">
+                <span class="badge-tipo badge-movimiento">MOVIMIENTO · ${tipo}</span>
+                <span class="card-ruta">${escaparHtml(formatoFecha(m.creado_en))}</span>
+              </div>
+              <div class="card-titulo">
+                $${monto} — ${nombreCliente} <span class="metodo-tag">(${metodo})</span>
+              </div>
+              <div class="card-meta">
+                <span>A interés: <strong class="txt-amarillo">+$${aInteres}</strong></span>
+                <span>A capital: <strong class="txt-verde">+$${aCapital}</strong></span>
+              </div>
+              <div class="card-id">ID Movimiento: ${escaparHtml(m.id)}</div>
+              <div class="card-links-row">
+                <a href="${rutaPrestamo}" class="enlace-detalle">Ver préstamo (${escaparHtml(rutaPrestamo)}) &rarr;</a>
+                ${
+                  rutaCliente
+                    ? `<a href="${rutaCliente}" class="enlace-detalle-sec">Ver cliente</a>`
+                    : ''
+                }
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      resultadosEl.innerHTML = html;
+    }
+
+    inputEl?.addEventListener('input', renderResultados);
+    chkPrestamos?.addEventListener('change', renderResultados);
+    chkMovimientos?.addEventListener('change', renderResultados);
+
+    btnLimpiar?.addEventListener('click', () => {
+      if (!inputEl) return;
+      inputEl.value = '';
+      renderResultados();
+      inputEl.focus();
+    });
+
+    inputEl?.focus();
+  </script>
+
+  <style>
+    .busqueda-wrapper {
+      max-width: 820px;
+      margin: 0 auto;
+      color: #f9fafb;
+    }
+    .search-topbar {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .btn-volver {
+      color: #34d399;
+      text-decoration: none;
+      font-size: 1.15rem;
+      padding: 0.35rem 0.5rem;
+    }
+    .search-input-box {
+      position: relative;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 999px;
+      padding: 0.35rem 0.85rem;
+    }
+    .search-input-box:focus-within {
+      border-color: #10b981;
+    }
+    .search-icon {
+      font-size: 0.85rem;
+      margin-right: 0.45rem;
+    }
+    .search-input {
+      width: 100%;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #f9fafb;
+      font-size: 0.9rem;
+      padding: 0.25rem 0;
+    }
+    .btn-limpiar {
+      background: #374151;
+      color: #f9fafb;
+      border: none;
+      width: 1.35rem;
+      height: 1.35rem;
+      border-radius: 999px;
+      font-size: 0.95rem;
+      line-height: 1;
+      cursor: pointer;
+      align-items: center;
+      justify-content: center;
+    }
+    .btn-cancelar {
+      color: #9ca3af;
+      text-decoration: none;
+      font-size: 0.82rem;
+      white-space: nowrap;
+      padding: 0.35rem 0.25rem;
+    }
+    .filtros-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      margin-top: 0.85rem;
+      margin-bottom: 1rem;
+    }
+    .checkbox-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 999px;
+      padding: 0.32rem 0.7rem;
+      font-size: 0.78rem;
+      color: #e5e7eb;
+      cursor: pointer;
+      user-select: none;
+    }
+    .checkbox-pill input {
+      accent-color: #10b981;
+      cursor: pointer;
+    }
+    .contador-resultados {
+      margin-left: auto;
+      font-size: 0.78rem;
+      color: #9ca3af;
+    }
+    .resultados-lista {
+      display: flex;
+      flex-direction: column;
+      gap: 0.7rem;
+    }
+    .grupo-titulo {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #9ca3af;
+      margin-top: 0.5rem;
+    }
+    .resultado-card {
+      display: block;
+      text-decoration: none;
+      color: inherit;
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 0.6rem;
+      padding: 0.85rem 1rem;
+    }
+    a.resultado-card:hover {
+      border-color: #374151;
+      background: #162033;
+    }
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.35rem;
+    }
+    .badge-tipo {
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 0.18rem 0.5rem;
+      border-radius: 999px;
+    }
+    .badge-cliente {
+      background: rgba(56, 189, 248, 0.16);
+      color: #7dd3fc;
+    }
+    .badge-prestamo {
+      background: rgba(16, 185, 129, 0.16);
+      color: #6ee7b7;
+    }
+    .badge-movimiento {
+      background: rgba(251, 191, 36, 0.16);
+      color: #fcd34d;
+    }
+    .card-ruta {
+      font-size: 0.72rem;
+      color: #6b7280;
+      font-family: monospace;
+    }
+    .card-titulo {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 0.3rem;
+    }
+    .metodo-tag {
+      font-size: 0.78rem;
+      font-weight: 400;
+      color: #9ca3af;
+    }
+    .card-meta {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      font-size: 0.8rem;
+      color: #d1d5db;
+    }
+    .card-id {
+      margin-top: 0.35rem;
+      font-size: 0.72rem;
+      color: #6b7280;
+      font-family: monospace;
+      word-break: break-all;
+    }
+    .card-links-row {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 0.5rem;
+      padding-top: 0.45rem;
+      border-top: 1px solid #1f2937;
+    }
+    .enlace-detalle {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #34d399;
+      text-decoration: none;
+    }
+    .enlace-detalle-sec {
+      font-size: 0.78rem;
+      color: #9ca3af;
+      text-decoration: none;
+    }
+    .txt-verde {
+      color: #34d399;
+    }
+    .txt-amarillo {
+      color: #fbbf24;
+    }
+    .estado-vacio {
+      text-align: center;
+      color: #9ca3af;
+      padding: 2rem 1rem;
+      font-size: 0.88rem;
+    }
+    .alert-error {
+      background-color: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.45);
+      color: #fca5a5;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      font-size: 0.82rem;
+    }
+  </style>
+</LayoutAdmin>
